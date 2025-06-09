@@ -66,3 +66,17 @@ Thumbs.db
 # Secrets
 config.ini
 secrets.json
+
+# Database files
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+crypto_news.db*
+exported_articles.json
+articles_for_analysis.json
+articles.json
+analyzed_articles.json
+scraper.log
+
+*.json
