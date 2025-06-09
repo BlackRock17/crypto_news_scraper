@@ -13,8 +13,12 @@ def debug_article_structure(url):
 
         response = session.get(url, timeout=15)
         response.raise_for_status()
-        response.encoding = 'utf-8'
 
+        # Важно: Автоматично декодиране на compressed content
+        if response.encoding is None:
+            response.encoding = 'utf-8'
+
+        # Използваме response.text вместо response.content за правилно декодиране
         soup = BeautifulSoup(response.text, 'html.parser')
 
         print(f"📊 Status код: {response.status_code}")
