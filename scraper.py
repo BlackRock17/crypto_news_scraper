@@ -20,7 +20,12 @@ class CoinDeskScraper:
     def __init__(self):
         print("🚀 Инициализиране на CoinDesk Scraper...")
         self.session = requests.Session()
-        self.session.headers.update(REQUEST_HEADERS)
+
+        # Използваме по-прости headers като в debug скрипта
+        simple_headers = {
+            'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        }
+        self.session.headers.update(simple_headers)
         self.scraped_urls = set()  # За да избягваме дублиране
         print("✅ Scraper готов!")
 
@@ -88,10 +93,9 @@ class CoinDeskScraper:
             )
             response.raise_for_status()
 
-            # Поправяме encoding проблема
-            response.encoding = 'utf-8'
-
-            soup = BeautifulSoup(response.text, 'html.parser')
+            # Правилно декодиране като в debug скрипта
+            content_text = response.content.decode('utf-8', errors='ignore')
+            soup = BeautifulSoup(content_text, 'html.parser')
 
             # Извличаме заглавието
             title = self._extract_title(soup)
@@ -146,7 +150,8 @@ class CoinDeskScraper:
 
     def _extract_content(self, soup):
         """Извлича съдържанието на статията"""
-        for selector in HTML_SELECTORS['article_content']:
+        # Първо опитваме специфичните селектори
+        for selector in HTML_SELECTORS['article_content'][1:]:  # Пропускаме 'p' за сега
             content_element = soup.select_one(selector)
             if content_element:
                 # Вземаме всички параграфи
@@ -155,11 +160,19 @@ class CoinDeskScraper:
                 if content:
                     return content
 
-        # Fallback - търсим всички <p> tags в цялата страница
+        # Fallback - използваме всички <p> tags (това работи за CoinDesk!)
         all_paragraphs = soup.find_all('p')
         if all_paragraphs:
-            content = '\n\n'.join([p.get_text().strip() for p in all_paragraphs if len(p.get_text().strip()) > 20])
-            return content[:5000]  # Ограничаваме до 5000 символа
+            # Филтрираме само параграфите със съдържание
+            meaningful_paragraphs = []
+            for p in all_paragraphs:
+                text = p.get_text().strip()
+                # Взимаме само параграфи с достатъчно текст
+                if len(text) > 30 and not text.startswith('Sign up') and not text.startswith('Get the'):
+                    meaningful_paragraphs.append(text)
+
+            content = '\n\n'.join(meaningful_paragraphs)
+            return content
 
         return "Съдържанието не може да бъде извлечено"
 
