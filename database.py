@@ -14,8 +14,14 @@ class DatabaseManager:
 
     def init_database(self):
         """Създава таблиците ако не съществуват"""
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, timeout=30.0) as conn:
             cursor = conn.cursor()
+
+            # Настройки за по-добра concurrency
+            cursor.execute("PRAGMA journal_mode=WAL")
+            cursor.execute("PRAGMA synchronous=NORMAL")
+            cursor.execute("PRAGMA cache_size=1000")
+            cursor.execute("PRAGMA temp_store=memory")
 
             # Главна таблица за статии
             cursor.execute('''
@@ -54,38 +60,53 @@ class DatabaseManager:
 
     def is_article_exists(self, url):
         """Проверява дали статията вече съществува в базата"""
-        with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT 1 FROM articles WHERE url = ?", (url,))
-            return cursor.fetchone() is not None
+        try:
+            with sqlite3.connect(self.db_path, timeout=10.0) as conn:
+                cursor = conn.cursor()
+                cursor.execute("SELECT 1 FROM articles WHERE url = ?", (url,))
+                return cursor.fetchone() is not None
+        except Exception:
+            return False
 
     def is_url_scraped_before(self, url):
         """Проверява дали URL-а е бил скрапван преди"""
-        with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT 1 FROM scraped_urls WHERE url = ?", (url,))
-            return cursor.fetchone() is not None
+        try:
+            with sqlite3.connect(self.db_path, timeout=10.0) as conn:
+                cursor = conn.cursor()
+                cursor.execute("SELECT 1 FROM scraped_urls WHERE url = ?", (url,))
+                return cursor.fetchone() is not None
+        except Exception:
+            return False
 
     def record_scraped_url(self, url):
-        """Записва или update-ва URL в историята"""
-        with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.cursor()
+        """Записва или update-ва URL в историята - използва се отделно"""
+        try:
+            with sqlite3.connect(self.db_path, timeout=30.0) as conn:
+                cursor = conn.cursor()
 
-            if self.is_url_scraped_before(url):
-                # Update existing record
-                cursor.execute('''
-                    UPDATE scraped_urls 
-                    SET last_seen_at = CURRENT_TIMESTAMP, 
-                        scrape_count = scrape_count + 1 
-                    WHERE url = ?
-                ''', (url,))
-            else:
-                # Insert new record
-                cursor.execute('''
-                    INSERT INTO scraped_urls (url) VALUES (?)
-                ''', (url,))
+                # Проверяваме дали съществува
+                cursor.execute("SELECT scrape_count FROM scraped_urls WHERE url = ?", (url,))
+                existing = cursor.fetchone()
 
-            conn.commit()
+                if existing:
+                    # Update existing record
+                    cursor.execute('''
+                        UPDATE scraped_urls 
+                        SET last_seen_at = CURRENT_TIMESTAMP, 
+                            scrape_count = scrape_count + 1 
+                        WHERE url = ?
+                    ''', (url,))
+                else:
+                    # Insert new record
+                    cursor.execute('''
+                        INSERT INTO scraped_urls (url) VALUES (?)
+                    ''', (url,))
+
+                conn.commit()
+                return True
+        except Exception as e:
+            print(f"❌ Грешка при записване на URL: {str(e)}")
+            return False
 
     def save_article(self, article_data):
         """Запазва статия в базата данни"""
@@ -93,9 +114,17 @@ class DatabaseManager:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
 
+                # Проверяваме дали статията вече съществува
+                cursor.execute("SELECT 1 FROM articles WHERE url = ?", (article_data['url'],))
+                if cursor.fetchone():
+                    print(f"⚠️ Статията вече съществува: {article_data['title'][:50]}...")
+                    # Записваме в URL историята
+                    self.record_scraped_url(article_data['url'])
+                    return False
+
                 # Записваме статията
                 cursor.execute('''
-                    INSERT OR IGNORE INTO articles 
+                    INSERT INTO articles 
                     (url, title, content, author, published_date, content_length)
                     VALUES (?, ?, ?, ?, ?, ?)
                 ''', (
@@ -107,17 +136,33 @@ class DatabaseManager:
                     article_data['content_length']
                 ))
 
-                # Записваме в URL историята
-                self.record_scraped_url(article_data['url'])
-
+                # Записваме в URL историята в отделна транзакция
                 conn.commit()
 
-                if cursor.rowcount > 0:
-                    print(f"✅ Запазена статия: {article_data['title'][:50]}...")
-                    return True
+            # Записваме URL историята в отделна connection
+            with sqlite3.connect(self.db_path) as conn2:
+                cursor2 = conn2.cursor()
+
+                # Проверяваме дали URL съществува
+                cursor2.execute("SELECT scrape_count FROM scraped_urls WHERE url = ?", (article_data['url'],))
+                existing = cursor2.fetchone()
+
+                if existing:
+                    cursor2.execute('''
+                        UPDATE scraped_urls 
+                        SET last_seen_at = CURRENT_TIMESTAMP, 
+                            scrape_count = scrape_count + 1 
+                        WHERE url = ?
+                    ''', (article_data['url'],))
                 else:
-                    print(f"⚠️ Статията вече съществува: {article_data['title'][:50]}...")
-                    return False
+                    cursor2.execute('''
+                        INSERT INTO scraped_urls (url) VALUES (?)
+                    ''', (article_data['url'],))
+
+                conn2.commit()
+
+            print(f"✅ Запазена статия: {article_data['title'][:50]}...")
+            return True
 
         except Exception as e:
             print(f"❌ Грешка при запазване на статия: {str(e)}")
