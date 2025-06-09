@@ -1,0 +1,17 @@
+beautifulsoup4==4.13.4
+certifi==2025.4.26
+charset-normalizer==3.4.2
+idna==3.10
+iniconfig==2.1.0
+lxml==5.4.0
+packaging==25.0
+pluggy==1.6.0
+psycopg2-binary==2.9.10
+Pygments==2.19.1
+pytest==8.4.0
+python-dateutil==2.9.0.post0
+requests==2.32.4
+six==1.17.0
+soupsieve==2.7
+typing_extensions==4.14.0
+urllib3==2.4.0
