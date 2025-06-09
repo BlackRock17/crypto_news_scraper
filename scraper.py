@@ -14,10 +14,11 @@ from config import (
     is_valid_article_url,
     get_full_url
 )
+from database import DatabaseManager
 
 
 class CoinDeskScraper:
-    def __init__(self):
+    def __init__(self, use_database=True):
         print("🚀 Инициализиране на CoinDesk Scraper...")
         self.session = requests.Session()
 
@@ -27,6 +28,14 @@ class CoinDeskScraper:
         }
         self.session.headers.update(simple_headers)
         self.scraped_urls = set()  # За да избягваме дублиране
+
+        # Database интеграция
+        self.use_database = use_database
+        if use_database:
+            self.db = DatabaseManager()
+        else:
+            self.db = None
+
         print("✅ Scraper готов!")
 
     def get_article_links(self):
@@ -205,8 +214,8 @@ class CoinDeskScraper:
 
         return "Неизвестен автор"
 
-    def scrape_multiple_articles(self, max_articles=None):
-        """Scrape-ва множество статии"""
+    def scrape_multiple_articles(self, max_articles=None, save_to_db=True):
+        """Scrape-ва множество статии и ги запазва в базата данни"""
         if max_articles is None:
             max_articles = SCRAPING_CONFIG['max_articles_per_session']
 
@@ -219,8 +228,30 @@ class CoinDeskScraper:
             print("❌ Не са намерени статии за scraping")
             return []
 
+        # Ако използваме database, филтрираме вече scraped URLs
+        if self.db and save_to_db:
+            print("🔍 Проверяване за дублиращи се URLs...")
+            new_article_links = []
+            skipped_count = 0
+
+            for link_info in article_links:
+                url = link_info['url']
+                if not self.db.is_url_scraped_before(url):
+                    new_article_links.append(link_info)
+                else:
+                    skipped_count += 1
+                    # Update последно виждане
+                    self.db.record_scraped_url(url)
+
+            print(f"📊 {len(new_article_links)} нови статии, {skipped_count} вече scraped")
+            article_links = new_article_links
+
         # Ограничаваме броя
         article_links = article_links[:max_articles]
+
+        if not article_links:
+            print("ℹ️ Всички статии са вече scraped")
+            return []
 
         # Scrape-ваме всяка статия
         scraped_articles = []
@@ -232,11 +263,22 @@ class CoinDeskScraper:
             if article_data:
                 scraped_articles.append(article_data)
 
+                # Запазваме в базата данни ако е заявено
+                if self.db and save_to_db:
+                    self.db.save_article(article_data)
+
             # Прогрес информация
             if i % 5 == 0:
                 print(f"📊 Прогрес: {i}/{len(article_links)} статии обработени")
 
         print(f"\n🎉 Scraping завършен! Успешно извлечени {len(scraped_articles)} статии")
+
+        # Database статистики
+        if self.db and save_to_db:
+            stats = self.db.get_database_stats()
+            print(
+                f"📊 Database статистики: {stats['total_articles']} общо статии, {stats['unprocessed_articles']} за анализ")
+
         return scraped_articles
 
 
