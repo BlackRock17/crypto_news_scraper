@@ -51,20 +51,21 @@ SCRAPING_CONFIG = {
     'min_article_length': 100,  # Минимална дължина на статия (символи)
 }
 
-# HTML селектори за CoinDesk (ще ги тестваме и подобрим)
+# HTML селектори за CoinDesk (обновени след debugging)
 HTML_SELECTORS = {
     # За главната страница
     'article_links': 'a[href*="/2025/"]',  # Линкове с 2025 година
 
-    # За отделна статия (примерни, ще ги тестваме)
+    # За отделна статия (актуални селектори)
     'article_title': [
-        'h1[data-module="ArticleHeader"]',
-        'h1.headline',
-        'h1',
-        '.article-title'
+        'h1',  # Работи! h1 tag
+        'title',  # Backup title
+        '[data-module="ArticleHeader"] h1',
+        '.headline'
     ],
     'article_content': [
-        'div[data-module="ArticleBody"]',
+        'p',  # Всички параграфи (работи!)
+        '[data-module="ArticleBody"]',
         '.article-content',
         '.post-content',
         'article .content'
@@ -73,12 +74,14 @@ HTML_SELECTORS = {
         'time[datetime]',
         '.article-date',
         '.post-date',
-        '[data-timestamp]'
+        '[data-timestamp]',
+        'time'
     ],
     'article_author': [
         '.author-name',
         '.byline',
-        '[data-author]'
+        '[data-author]',
+        '[data-module="Author"]'
     ]
 }
 
