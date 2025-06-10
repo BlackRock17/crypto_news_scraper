@@ -1,6 +1,211 @@
 import sqlite3
 
 import requests
+
+
+def _extract_content_improved(self, soup):
+    """КОРЕННО ПОДОБРЕНО извличане на съдържанието за CoinDesk"""
+
+    print("🔍 Започвам FIXED content extraction...")
+
+    # СТРАТЕГИЯ 1: CoinDesk-специфични patterns
+    print("🎯 СТРАТЕГИЯ 1: CoinDesk patterns...")
+
+    # Намираме "What to know:" marker и взимаме контейнера
+    what_to_know = soup.find(text=lambda text: text and 'What to know:' in text)
+    if what_to_know:
+        print("✅ Намерен 'What to know:' marker")
+
+        # Намираме parent container
+        current = what_to_know.parent
+        while current and current.name not in ['main', 'article', 'div', 'section']:
+            current = current.parent
+
+        if current:
+            # Вземаме всички <p> в този container
+            container_paragraphs = current.find_all('p')
+            meaningful_text = []
+
+            for p in container_paragraphs:
+                text = p.get_text().strip()
+                if (text and
+                        len(text) > 30 and
+                        'See all newsletters' not in text and
+                        'What to know:' not in text and
+                        not text.startswith('[')):  # Премахваме price links
+                    meaningful_text.append(text)
+
+            if meaningful_text:
+                content = '\n\n'.join(meaningful_text)
+                print(f"✅ CoinDesk pattern extraction: {len(content)} chars")
+                if len(content) > 200:
+                    return content
+
+    # СТРАТЕГИЯ 2: Търсим main content container
+    print("🎯 СТРАТЕГИЯ 2: Main containers...")
+    main_selectors = [
+        'main',
+        'article',
+        '[role="main"]',
+        '.article-content',
+        '.post-content',
+        '.entry-content',
+        'div[data-module="ArticleBody"]'
+    ]
+
+    for selector in main_selectors:
+        container = soup.select_one(selector)
+        if container:
+            print(f"✅ Намерен container: {selector}")
+            paragraphs = container.find_all('p')
+            content = self._process_paragraphs_fixed(paragraphs)
+            if len(content) > 200:
+                print(f"✅ Main container extraction: {len(content)} chars")
+                return content
+
+    # СТРАТЕГИЯ 3: Всички <p> tags с по-умна филтрация
+    print("🎯 СТРАТЕГИЯ 3: Всички <p> tags...")
+    all_paragraphs = soup.find_all('p')
+    print(f"📊 Намерени {len(all_paragraphs)} общо <p> tags")
+
+    if all_paragraphs:
+        content = self._process_paragraphs_fixed(all_paragraphs)
+        if len(content) > 100:
+            print(f"✅ All paragraphs extraction: {len(content)} chars")
+            return content
+
+    # СТРАТЕГИЯ 4: Търсим текст в div елементи
+    print("🎯 СТРАТЕГИЯ 4: Div text extraction...")
+
+    # Намираме всички div-ове с текст
+    text_divs = soup.find_all('div')
+    meaningful_texts = []
+
+    for div in text_divs:
+        # Взимаме директния текст от div-а
+        direct_text = div.get_text(separator=' ', strip=True)
+
+        # Филтрираме по дължина и съдържание
+        if (50 < len(direct_text) < 2000 and
+                '.' in direct_text and  # Трябва да има изречения
+                not direct_text.startswith('[') and  # Не започва с [price links]
+                'See all newsletters' not in direct_text):
+            meaningful_texts.append(direct_text)
+
+    if meaningful_texts:
+        # Вземаме най-дългите и най-значимите текстове
+        meaningful_texts.sort(key=len, reverse=True)
+        selected_texts = meaningful_texts[:5]  # Първите 5 най-дълги
+
+        content = '\n\n'.join(selected_texts)
+        if len(content) > 200:
+            print(f"✅ Div text extraction: {len(content)} chars")
+            return content
+
+    # СТРАТЕГИЯ 5: Fallback - body text
+    print("🎯 СТРАТЕГИЯ 5: Body fallback...")
+    body = soup.find('body')
+    if body:
+        # Премахваме нежелани елементи
+        for unwanted in body(['script', 'style', 'nav', 'header', 'footer', 'aside']):
+            unwanted.decompose()
+
+        body_text = body.get_text(separator=' ', strip=True)
+
+        # Разделяме по изречения и вземаме смислените
+        sentences = [s.strip() for s in body_text.split('.') if s.strip()]
+        meaningful_sentences = []
+
+        for sentence in sentences:
+            if (20 < len(sentence) < 500 and
+                    not sentence.startswith('[') and
+                    'See all newsletters' not in sentence and
+                    'Sign up' not in sentence):
+                meaningful_sentences.append(sentence)
+
+        if meaningful_sentences:
+            # Вземаме първите 20 изречения
+            content = '. '.join(meaningful_sentences[:20]) + '.'
+            if len(content) > 200:
+                print(f"✅ Body fallback extraction: {len(content)} chars")
+                return content
+
+    print("❌ Всички стратегии неуспешни")
+    return "Съдържанието не може да бъде извлечено"
+
+
+def _process_paragraphs_fixed(self, paragraphs):
+    """Подобрена обработка на параграфи"""
+    meaningful_paragraphs = []
+
+    for p in paragraphs:
+        text = p.get_text().strip()
+
+        # По-строга филтрация
+        if self._is_meaningful_paragraph_fixed(text):
+            meaningful_paragraphs.append(text)
+
+    return '\n\n'.join(meaningful_paragraphs)
+
+
+def _is_meaningful_paragraph_fixed(self, text):
+    """Подобрена проверка за смислени параграфи"""
+
+    # Основни проверки
+    if len(text) < 20:
+        return False
+
+    # Изключваме price links и navigation
+    if text.startswith('[') and text.endswith(']'):
+        return False
+
+    # Изключваме нежелани фрази
+    exclude_phrases = [
+        'Sign up', 'Subscribe', 'Newsletter', 'See all newsletters',
+        'Don\'t miss', 'By signing up', 'privacy policy', 'terms of use',
+        'Cookie', 'Advertisement', 'Sponsored', 'Follow us', 'Share this',
+        'Read more', 'Click here', 'Download', 'Watch', 'Listen',
+        'Back to menu', 'What to know:', 'See more'
+    ]
+
+
+def _is_meaningful_paragraph_fixed(self, text):
+    """Подобрена проверка за смислени параграфи"""
+
+    # Основни проверки
+    if len(text) < 20:
+        return False
+
+    # Изключваме price links и navigation
+    if text.startswith('[') and text.endswith(']'):
+        return False
+
+    # Изключваме нежелани фрази
+    exclude_phrases = [
+        'Sign up', 'Subscribe', 'Newsletter', 'See all newsletters',
+        'Don\'t miss', 'By signing up', 'privacy policy', 'terms of use',
+        'Cookie', 'Advertisement', 'Sponsored', 'Follow us', 'Share this',
+        'Read more', 'Click here', 'Download', 'Watch', 'Listen',
+        'Back to menu', 'What to know:', 'See more'
+    ]
+
+    text_lower = text.lower()
+    for phrase in exclude_phrases:
+        if phrase.lower() in text_lower:
+            return False
+
+    # Трябва да има поне едно изречение
+    if text.count('.') < 1 and text.count('!') < 1 and text.count('?') < 1:
+        return False
+
+    # Не трябва да е само цифри или кратки фрази
+    words = text.split()
+    if len(words) < 5:
+        return False
+
+    return True
+
+
 from bs4 import BeautifulSoup
 import time
 from datetime import datetime, timedelta
@@ -392,22 +597,72 @@ class CoinDeskLatestNewsScraper:
     def _extract_content_improved(self, soup):
         print("🔍 Започвам подобрено извличане на съдържание...")
 
-        main_selectors = ['main', 'article', '[role="main"]', '.article-content', '.post-content']
+        # СТРАТЕГИЯ 1: Main containers
+        main_selectors = [
+            'main',
+            'article',
+            '[role="main"]',
+            '.article-content',
+            '.post-content',
+            '.entry-content'
+        ]
 
         for selector in main_selectors:
             container = soup.select_one(selector)
             if container:
+                print(f"✅ Намерен main container: {selector}")
                 paragraphs = container.find_all('p')
                 content = self._process_paragraphs(paragraphs)
                 if len(content) > 200:
+                    print(f"✅ Извлечени {len(content)} chars от {selector}")
                     return content
 
+        # СТРАТЕГИЯ 2: Всички <p> tags но с по-умна филтрация
+        print("🔍 Търся всички <p> tags...")
         all_paragraphs = soup.find_all('p')
+        print(f"📊 Намерени {len(all_paragraphs)} общо <p> tags")
+
         if all_paragraphs:
             content = self._process_paragraphs(all_paragraphs)
             if len(content) > 100:
+                print(f"✅ Извлечени {len(content)} chars от всички <p> tags")
                 return content
 
+        # СТРАТЕГИЯ 3: Div containers с текст
+        print("🔍 Търся div containers с текст...")
+        text_divs = soup.find_all('div')
+        meaningful_text = []
+
+        for div in text_divs:
+            # Вземаме само direct text, не nested elements
+            direct_text = div.get_text().strip()
+            if 50 < len(direct_text) < 1000:  # Разумна дължина
+                meaningful_text.append(direct_text)
+
+        if meaningful_text:
+            content = '\n\n'.join(meaningful_text[:10])  # Вземаме първите 10
+            if len(content) > 100:
+                print(f"✅ Извлечени {len(content)} chars от div containers")
+                return content
+
+        # СТРАТЕГИЯ 4: Fallback - всичко в body
+        print("🔍 Fallback: Вземам всичко от body...")
+        body = soup.find('body')
+        if body:
+            # Премахваме script и style tags
+            for script in body(["script", "style", "nav", "header", "footer"]):
+                script.decompose()
+
+            body_text = body.get_text()
+            # Почистваме и вземаме разумна част
+            lines = [line.strip() for line in body_text.split('\n') if line.strip()]
+            content = '\n'.join(lines[:50])  # Първите 50 реда
+
+            if len(content) > 100:
+                print(f"✅ Fallback извлечени {len(content)} chars от body")
+                return content
+
+        print("❌ Не успях да извлека съдържание")
         return "Съдържанието не може да бъде извлечено"
 
     def _process_paragraphs(self, paragraphs):
@@ -419,17 +674,28 @@ class CoinDeskLatestNewsScraper:
         return '\n\n'.join(meaningful_paragraphs)
 
     def _is_meaningful_paragraph(self, text):
-        if len(text) < 20:
+        """Проверява дали параграфа е смислен"""
+        if len(text) < 20:  # Твърде кратък
             return False
+
+        # Изключваме нежелани фрази
         exclude_phrases = [
             'Sign up', 'Subscribe', 'Newsletter', 'See all newsletters',
-            'Don\'t miss', 'privacy policy', 'terms of use', 'Cookie'
+            'Don\'t miss', 'By signing up', 'privacy policy', 'terms of use',
+            'Cookie', 'Advertisement', 'Sponsored', 'Follow us', 'Share this',
+            'Read more', 'Click here', 'Download', 'Watch', 'Listen'
         ]
+
         text_lower = text.lower()
         for phrase in exclude_phrases:
             if phrase.lower() in text_lower:
                 return False
-        return text.count('.') >= 1
+
+        # Проверяваме за нормални изречения
+        if text.count('.') < 1:  # Няма изречения
+            return False
+
+        return True
 
     def _extract_date_improved(self, soup):
         published_meta = soup.find('meta', property='article:published_time')
