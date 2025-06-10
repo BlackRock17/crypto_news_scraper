@@ -1,313 +1,246 @@
-import requests
-from bs4 import BeautifulSoup
+#!/usr/bin/env python3
+"""
+Тест на подобрения CoinDesk scraper
+Замени оригиналния scraper.py с новия код за да тестваш
+"""
+
+import sys
 import time
-from datetime import datetime
-from urllib.parse import urljoin
-import re
+from pathlib import Path
 
-from config import (
-    COINDESK_MAIN_PAGE,
-    REQUEST_HEADERS,
-    NEWS_URL_PATTERNS,
-    SCRAPING_CONFIG,
-    HTML_SELECTORS,
-    is_valid_article_url,
-    get_full_url
-)
-from database import DatabaseManager
+# Добави current directory към path за import
+sys.path.append(str(Path(__file__).parent))
 
 
-class CoinDeskScraper:
-    def __init__(self, use_database=True):
-        print("🚀 Инициализиране на CoinDesk Scraper...")
-        self.session = requests.Session()
+def test_with_existing_project():
+    """Тества с існуващия проект (замени scraper.py)"""
+    print("=== ТЕСТ НА ПОДОБРЕНИЯ SCRAPER ===")
+    print("⚠️  За този тест трябва да замениш scraper.py с новия код!")
+    print()
 
-        # Използваме по-прости headers като в debug скрипта
-        simple_headers = {
-            'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-        }
-        self.session.headers.update(simple_headers)
-        self.scraped_urls = set()  # За да избягваме дублиране
+    try:
+        # Import на подобрения scraper
+        from scraper import CoinDeskScraper
 
-        # Database интеграция
-        self.use_database = use_database
-        if use_database:
-            self.db = DatabaseManager()
+        print("✅ Scraper imported успешно")
+
+        # Тест 1: URL validation
+        print("\n🔍 Тест 1: Проверка на URL detection...")
+        scraper = CoinDeskScraper(use_database=False)
+        article_links = scraper.get_article_links()
+
+        print(f"📊 Намерени {len(article_links)} статии")
+
+        if len(article_links) == 0:
+            print("❌ Няма намерени статии - проблем с URL detection")
+            return False
+
+        # Показваме първите 3
+        print("\n📋 Първи 3 статии:")
+        for i, link in enumerate(article_links[:3], 1):
+            print(f"  {i}. {link['title'][:60]}...")
+            print(f"     → {link['url']}")
+
+        # Тест 2: Single article scraping
+        print(f"\n🔍 Тест 2: Scraping на първата статия...")
+        first_article_url = article_links[0]['url']
+        article_data = scraper.scrape_single_article(first_article_url)
+
+        if article_data:
+            print(f"✅ Успешно извлечена статия!")
+            print(f"   📄 Заглавие: {article_data['title']}")
+            print(f"   📊 Дължина: {article_data['content_length']} chars")
+            print(f"   👤 Автор: {article_data['author']}")
+            print(f"   📅 Дата: {article_data['date']}")
+            print(f"   📝 Първи 200 chars: {article_data['content'][:200]}...")
         else:
-            self.db = None
+            print("❌ Неуспешно извличане на статията")
+            return False
 
-        print("✅ Scraper готов!")
+        # Тест 3: Multiple articles
+        print(f"\n🔍 Тест 3: Scraping на 5 статии...")
+        articles = scraper.scrape_multiple_articles(max_articles=5, save_to_db=False)
 
-    def get_article_links(self):
-        """Намира всички линкове към статии от главната страница"""
-        print("🔍 Търсене на статии в главната страница...")
+        print(f"\n📊 РЕЗУЛТАТИ:")
+        print(f"   ✅ Успешно извлечени: {len(articles)} статии")
+        print(f"   📈 Success rate: {len(articles)}/5 = {(len(articles) / 5) * 100:.1f}%")
 
-        try:
-            response = self.session.get(
-                COINDESK_MAIN_PAGE,
-                timeout=SCRAPING_CONFIG['request_timeout']
-            )
-            response.raise_for_status()
+        if len(articles) >= 3:
+            print("🎉 ТЕСТЪТ УСПЕШЕН! Scraper-ът работи добре!")
+            print("\nИзвлечени статии:")
+            for i, article in enumerate(articles, 1):
+                print(f"  {i}. {article['title'][:50]}... ({article['content_length']} chars)")
+            return True
+        else:
+            print("⚠️  Scraper-ът работи, но успешността е ниска")
+            return False
 
-            soup = BeautifulSoup(response.content, 'html.parser')
-
-            # Намираме всички линкове
-            all_links = soup.find_all('a', href=True)
-
-            # Филтрираме валидните статии
-            article_links = []
-            for link in all_links:
-                href = link['href']
-
-                # Правим пълен URL
-                full_url = get_full_url(href)
-
-                # Проверяваме дали е валиден article URL
-                if is_valid_article_url(href):
-                    # Вземаме заглавието на линка
-                    title = link.text.strip()
-                    if title and len(title) > 10:  # Само със смислено заглавие
-                        article_links.append({
-                            'url': full_url,
-                            'title': title,
-                            'href': href
-                        })
-
-            # Премахваме дублираните URLs
-            unique_articles = []
-            seen_urls = set()
-            for article in article_links:
-                if article['url'] not in seen_urls:
-                    unique_articles.append(article)
-                    seen_urls.add(article['url'])
-
-            print(f"📰 Намерени {len(unique_articles)} уникални статии")
-            return unique_articles
-
-        except Exception as e:
-            print(f"❌ Грешка при извличането на линкове: {str(e)}")
-            return []
-
-    def scrape_single_article(self, article_url):
-        """Извлича съдържанието на една статия"""
-        print(f"📄 Scraping статия: {article_url}")
-
-        try:
-            # Малка пауза между заявките
-            time.sleep(SCRAPING_CONFIG['delay_between_requests'])
-
-            response = self.session.get(
-                article_url,
-                timeout=SCRAPING_CONFIG['request_timeout']
-            )
-            response.raise_for_status()
-
-            # Правилно декодиране като в debug скрипта
-            content_text = response.content.decode('utf-8', errors='ignore')
-            soup = BeautifulSoup(content_text, 'html.parser')
-
-            # Извличаме заглавието
-            title = self._extract_title(soup)
-
-            # Извличаме съдържанието
-            content = self._extract_content(soup)
-
-            # Извличаме датата
-            date = self._extract_date(soup)
-
-            # Извличаме автора (ако има)
-            author = self._extract_author(soup)
-
-            # Проверяваме дали статията е достатъчно дълга
-            if len(content) < SCRAPING_CONFIG['min_article_length']:
-                print(f"⚠️  Статията е твърде кратка ({len(content)} chars)")
-                return None
-
-            article_data = {
-                'url': article_url,
-                'title': title,
-                'content': content,
-                'date': date,
-                'author': author,
-                'scraped_at': datetime.now(),
-                'content_length': len(content)
-            }
-
-            print(f"✅ Успешно извлечена статия: {title[:50]}...")
-            return article_data
-
-        except Exception as e:
-            print(f"❌ Грешка при scraping на {article_url}: {str(e)}")
-            return None
-
-    def _extract_title(self, soup):
-        """Извлича заглавието на статията"""
-        for selector in HTML_SELECTORS['article_title']:
-            title_element = soup.select_one(selector)
-            if title_element:
-                return title_element.get_text().strip()
-
-        # Fallback - търсим в <title> tag
-        title_tag = soup.find('title')
-        if title_tag:
-            title = title_tag.get_text().strip()
-            # Почистваме от " | CoinDesk" в края
-            title = re.sub(r'\s*\|\s*CoinDesk.*$', '', title)
-            return title
-
-        return "Неизвестно заглавие"
-
-    def _extract_content(self, soup):
-        """Извлича съдържанието на статията"""
-        # Първо опитваме специфичните селектори
-        for selector in HTML_SELECTORS['article_content'][1:]:  # Пропускаме 'p' за сега
-            content_element = soup.select_one(selector)
-            if content_element:
-                # Вземаме всички параграфи
-                paragraphs = content_element.find_all('p')
-                content = '\n\n'.join([p.get_text().strip() for p in paragraphs if p.get_text().strip()])
-                if content:
-                    return content
-
-        # Fallback - използваме всички <p> tags (това работи за CoinDesk!)
-        all_paragraphs = soup.find_all('p')
-        if all_paragraphs:
-            # Филтрираме само параграфите със съдържание
-            meaningful_paragraphs = []
-            for p in all_paragraphs:
-                text = p.get_text().strip()
-                # Взимаме само параграфи с достатъчно текст
-                if len(text) > 30 and not text.startswith('Sign up') and not text.startswith('Get the'):
-                    meaningful_paragraphs.append(text)
-
-            content = '\n\n'.join(meaningful_paragraphs)
-            return content
-
-        return "Съдържанието не може да бъде извлечено"
-
-    def _extract_date(self, soup):
-        """Извлича датата на статията"""
-        for selector in HTML_SELECTORS['article_date']:
-            date_element = soup.select_one(selector)
-            if date_element:
-                # Търсим datetime атрибут
-                datetime_str = date_element.get('datetime')
-                if datetime_str:
-                    try:
-                        return datetime.fromisoformat(datetime_str.replace('Z', '+00:00'))
-                    except:
-                        pass
-
-                # Опитваме да парсираме текста
-                date_text = date_element.get_text().strip()
-                if date_text:
-                    return date_text
-
-        return datetime.now().strftime('%Y-%m-%d')
-
-    def _extract_author(self, soup):
-        """Извлича автора на статията"""
-        for selector in HTML_SELECTORS['article_author']:
-            author_element = soup.select_one(selector)
-            if author_element:
-                return author_element.get_text().strip()
-
-        return "Неизвестен автор"
-
-    def scrape_multiple_articles(self, max_articles=None, save_to_db=True):
-        """Scrape-ва множество статии и ги запазва в базата данни"""
-        if max_articles is None:
-            max_articles = SCRAPING_CONFIG['max_articles_per_session']
-
-        print(f"🎯 Започвам scraping на максимум {max_articles} статии...")
-
-        # Получаваме линковете
-        article_links = self.get_article_links()
-
-        if not article_links:
-            print("❌ Не са намерени статии за scraping")
-            return []
-
-        # Ако използваме database, филтрираме вече scraped URLs
-        if self.db and save_to_db:
-            print("🔍 Проверяване за дублиращи се URLs...")
-            new_article_links = []
-            skipped_count = 0
-
-            for link_info in article_links:
-                url = link_info['url']
-                if not self.db.is_url_scraped_before(url):
-                    new_article_links.append(link_info)
-                else:
-                    skipped_count += 1
-                    # Update последно виждане
-                    self.db.record_scraped_url(url)
-
-            print(f"📊 {len(new_article_links)} нови статии, {skipped_count} вече scraped")
-            article_links = new_article_links
-
-        # Ограничаваме броя
-        article_links = article_links[:max_articles]
-
-        if not article_links:
-            print("ℹ️ Всички статии са вече scraped")
-            return []
-
-        # Scrape-ваме всяка статия
-        scraped_articles = []
-        for i, link_info in enumerate(article_links, 1):
-            url = link_info['url']
-            print(f"\n[{i}/{len(article_links)}] {link_info['title'][:60]}...")
-
-            article_data = self.scrape_single_article(url)
-            if article_data:
-                scraped_articles.append(article_data)
-
-                # Запазваме в базата данни ако е заявено
-                if self.db and save_to_db:
-                    self.db.save_article(article_data)
-
-            # Прогрес информация
-            if i % 5 == 0:
-                print(f"📊 Прогрес: {i}/{len(article_links)} статии обработени")
-
-        print(f"\n🎉 Scraping завършен! Успешно извлечени {len(scraped_articles)} статии")
-
-        # Database статистики
-        if self.db and save_to_db:
-            stats = self.db.get_database_stats()
-            print(
-                f"📊 Database статистики: {stats['total_articles']} общо статии, {stats['unprocessed_articles']} за анализ")
-
-        return scraped_articles
-
-
-# Тестова функция
-def test_single_article():
-    """Тества scraping на една статия"""
-    scraper = CoinDeskScraper()
-
-    # Тестваме с конкретна статия
-    test_url = "https://www.coindesk.com/markets/2025/06/09/bitwise-proshares-file-for-etfs-tracking-soaring-circle-shares"
-
-    print(f"\n🧪 Тестване на scraping на една статия...")
-    article = scraper.scrape_single_article(test_url)
-
-    if article:
-        print(f"\n✅ УСПЕХ! Извлечена статия:")
-        print(f"   📄 Заглавие: {article['title']}")
-        print(f"   📅 Дата: {article['date']}")
-        print(f"   👤 Автор: {article['author']}")
-        print(f"   📊 Дължина: {article['content_length']} символа")
-        print(f"   📝 Първи 200 символа: {article['content'][:200]}...")
-        return True
-    else:
-        print("❌ Неуспешно извличане на статията")
+    except ImportError as e:
+        print(f"❌ Грешка при import: {e}")
+        print("💡 Уверете се, че сте заменили scraper.py с новия код")
+        return False
+    except Exception as e:
+        print(f"❌ Неочаквана грешка: {e}")
         return False
 
 
-if __name__ == "__main__":
-    print("=== COINDESK SCRAPER TEST ===")
+def run_quick_debug():
+    """Бърз debug на проблема без замяна на файлове"""
+    print("=== БЪРЗ DEBUG НА ПРОБЛЕМА ===")
 
-    # Тестваме основната функционалност
-    test_single_article()
+    import requests
+    from bs4 import BeautifulSoup
+
+    # Тестваме директно една статия
+    test_url = "https://www.coindesk.com/markets/2025/06/09/bitwise-proshares-file-for-etfs-tracking-soaring-circle-shares"
+
+    print(f"🔍 Тествам директно: {test_url}")
+
+    try:
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        }
+
+        response = requests.get(test_url, headers=headers, timeout=15)
+        print(f"📊 Status: {response.status_code}")
+
+        if response.status_code == 200:
+            soup = BeautifulSoup(response.content, 'html.parser')
+
+            # Тест 1: Title
+            h1 = soup.find('h1')
+            title = h1.get_text().strip() if h1 else "No H1"
+            print(f"📄 Title: {title}")
+
+            # Тест 2: Paragraphs
+            all_p = soup.find_all('p')
+            print(f"📝 Намерени {len(all_p)} <p> tags")
+
+            # Показваме първите 3 параграфа
+            meaningful_p = []
+            for p in all_p[:10]:  # Първите 10
+                text = p.get_text().strip()
+                if len(text) > 30:
+                    meaningful_p.append(text)
+
+            print(f"📝 Смислени параграфи: {len(meaningful_p)}")
+
+            if meaningful_p:
+                print("📝 Първи 3 параграфа:")
+                for i, para in enumerate(meaningful_p[:3], 1):
+                    print(f"  {i}. {para[:100]}...")
+
+                total_content = '\n\n'.join(meaningful_p)
+                print(f"📊 Общо съдържание: {len(total_content)} chars")
+
+                if len(total_content) > 200:
+                    print("✅ Достатъчно съдържание за извличане!")
+                    return True
+                else:
+                    print("❌ Недостатъчно съдържание")
+            else:
+                print("❌ Няма смислени параграфи")
+
+        else:
+            print(f"❌ HTTP грешка: {response.status_code}")
+
+    except Exception as e:
+        print(f"❌ Грешка: {e}")
+
+    return False
+
+
+def analyze_current_scraper_issue():
+    """Анализира проблема с текущия scraper"""
+    print("=== АНАЛИЗ НА ТЕКУЩИЯ SCRAPER ПРОБЛЕМ ===")
+
+    try:
+        # Опитваме да намерим проблема в оригиналния scraper
+        print("🔍 Търся config.py...")
+        with open('config.py', 'r', encoding='utf-8') as f:
+            config_content = f.read()
+
+        print("✅ config.py намерен")
+
+        # Проверяваме HTML_SELECTORS
+        if 'HTML_SELECTORS' in config_content:
+            print("✅ HTML_SELECTORS намерени в config")
+
+            # Извличаме article_content селекторите
+            import re
+            content_match = re.search(r"'article_content':\s*\[(.*?)\]", config_content, re.DOTALL)
+            if content_match:
+                selectors = content_match.group(1)
+                print(f"📋 Текущи content селектори: {selectors}")
+
+        print("\n💡 ПРОБЛЕМЪТ: Селекторите в config.py не работят с новата CoinDesk структура")
+        print("💡 РЕШЕНИЕ: Трябва да обновим scraper.py с новата логика")
+
+    except FileNotFoundError:
+        print("❌ config.py не е намерен")
+    except Exception as e:
+        print(f"❌ Грешка при анализ: {e}")
+
+
+def provide_solution_steps():
+    """Предоставя стъпки за решение"""
+    print("\n" + "=" * 60)
+    print("🚀 СТЪПКИ ЗА РЕШАВАНЕ НА ПРОБЛЕМА")
+    print("=" * 60)
+
+    print("""
+🔧 СТЪПКА 1: Замени scraper.py
+   - Копирай новия код от artifacts
+   - Замести съществуващия scraper.py файл
+
+🔧 СТЪПКА 2: Тествай
+   - Изпълни: python -c "from scraper import CoinDeskScraper; s=CoinDeskScraper(False); print(len(s.get_article_links()))"
+
+🔧 СТЪПКА 3: Пълен тест
+   - Изпълни: python run_scraper.py scrape --limit 5 --verbose
+
+🔧 СТЪПКА 4: Провери резултата
+   - Трябва да видиш повече от 3 статии
+   - Success rate трябва да е >80%
+    """)
+
+    print("💡 Ако има проблеми, изпрати грешките и ще помогна!")
+
+
+if __name__ == "__main__":
+    print("🧪 COINDESK SCRAPER ДИАГНОСТИКА")
+    print("=" * 50)
+
+    # Избор на тест
+    print("\nВъзможни тестове:")
+    print("1. Бърз debug (без промени на файлове)")
+    print("2. Тест с подобрения scraper (изисква замяна на scraper.py)")
+    print("3. Анализ на текущия проблем")
+    print("4. Стъпки за решение")
+
+    try:
+        choice = input("\nИзбери тест (1-4): ").strip()
+
+        if choice == "1":
+            success = run_quick_debug()
+        elif choice == "2":
+            success = test_with_existing_project()
+        elif choice == "3":
+            analyze_current_scraper_issue()
+            success = True
+        elif choice == "4":
+            provide_solution_steps()
+            success = True
+        else:
+            print("❌ Невалиден избор")
+            success = False
+
+        if success:
+            print("\n✅ Тест завършен успешно!")
+        else:
+            print("\n❌ Тест неуспешен")
+
+    except KeyboardInterrupt:
+        print("\n⏹️ Прекратено от потребителя")
+    except Exception as e:
+        print(f"\n❌ Грешка: {e}")
