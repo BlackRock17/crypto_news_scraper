@@ -21,7 +21,7 @@ except ImportError:
 
 # Стандартни imports
 from scraper import CoinDeskScraper
-from database import DatabaseManager
+from postgres_database import PostgreSQLDatabaseManager as DatabaseManager
 
 
 def scrape_command(args):
