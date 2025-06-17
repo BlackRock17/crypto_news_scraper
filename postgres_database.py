@@ -149,3 +149,60 @@ class PostgreSQLDatabaseManager:
 
             print(f"📊 Резултат: {saved_count} нови статии, {duplicate_count} дублиращи се")
             return saved_count, duplicate_count
+
+        def is_url_scraped_before(self, url):
+            """Проверява дали URL-а е бил скрапван преди"""
+            try:
+                with self.get_connection() as conn:
+                    with conn.cursor() as cursor:
+                        cursor.execute("SELECT 1 FROM scraped_urls WHERE url = %s", (url,))
+                        return cursor.fetchone() is not None
+            except psycopg2.Error:
+                return False
+
+        def record_scraped_url(self, url):
+            """Записва URL в историята (за да не го скрапваме пак)"""
+            try:
+                with self.get_connection() as conn:
+                    with conn.cursor() as cursor:
+                        # PostgreSQL UPSERT синтаксис
+                        cursor.execute('''
+                            INSERT INTO scraped_urls (url) 
+                            VALUES (%s)
+                            ON CONFLICT (url) 
+                            DO UPDATE SET 
+                                last_seen_at = CURRENT_TIMESTAMP,
+                                scrape_count = scraped_urls.scrape_count + 1
+                        ''', (url,))
+
+                        conn.commit()
+                        return True
+            except psycopg2.Error as e:
+                print(f"❌ Грешка при записване на URL: {e}")
+                return False
+
+        def get_database_stats(self):
+            """Показва статистики за базата данни"""
+            try:
+                with self.get_connection() as conn:
+                    with conn.cursor() as cursor:
+                        # Общ брой статии
+                        cursor.execute("SELECT COUNT(*) FROM articles")
+                        total_articles = cursor.fetchone()[0]
+
+                        # Анализирани статии
+                        cursor.execute("SELECT COUNT(*) FROM articles WHERE is_analyzed = TRUE")
+                        analyzed_articles = cursor.fetchone()[0]
+
+                        # Неанализирани статии
+                        cursor.execute("SELECT COUNT(*) FROM articles WHERE is_analyzed = FALSE")
+                        unanalyzed_articles = cursor.fetchone()[0]
+
+                        return {
+                            'total_articles': total_articles,
+                            'analyzed_articles': analyzed_articles,
+                            'unanalyzed_articles': unanalyzed_articles
+                        }
+            except psycopg2.Error as e:
+                print(f"❌ Грешка при статистики: {e}")
+                return {}
