@@ -74,3 +74,36 @@ class PostgreSQLDatabaseManager:
 
                     print("✅ Таблици за база данни А създадени")
                     conn.commit()
+
+        def save_article(self, article_data):
+            """Запазва една статия в базата данни"""
+            try:
+                with self.get_connection() as conn:
+                    with conn.cursor() as cursor:
+                        # Проверяваме дали статията вече съществува
+                        cursor.execute("SELECT 1 FROM articles WHERE url = %s", (article_data['url'],))
+                        if cursor.fetchone():
+                            print(f"⚠️ Статията вече съществува: {article_data['title'][:50]}...")
+                            return False
+
+                        # Запазваме статията
+                        cursor.execute('''
+                            INSERT INTO articles 
+                            (url, title, content, author, published_date, content_length)
+                            VALUES (%s, %s, %s, %s, %s, %s)
+                        ''', (
+                            article_data['url'],
+                            article_data['title'],
+                            article_data['content'],
+                            article_data['author'],
+                            str(article_data['date']),
+                            article_data['content_length']
+                        ))
+
+                        conn.commit()
+                        print(f"✅ Запазена статия: {article_data['title'][:50]}...")
+                        return True
+
+            except psycopg2.Error as e:
+                print(f"❌ Грешка при запазване: {e}")
+                return False
