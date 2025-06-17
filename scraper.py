@@ -14,7 +14,7 @@ from config import (
     is_valid_article_url,
     get_full_url
 )
-from database import DatabaseManager
+from postgres_database import PostgreSQLDatabaseManager
 
 
 class CoinDeskScraper:
@@ -35,7 +35,7 @@ class CoinDeskScraper:
         # Database интеграция
         self.use_database = use_database
         if use_database:
-            self.db = DatabaseManager()
+            self.db = PostgreSQLDatabaseManager()
         else:
             self.db = None
 
