@@ -201,7 +201,7 @@ class PostgreSQLDatabaseManager:
                         return {
                             'total_articles': total_articles,
                             'analyzed_articles': analyzed_articles,
-                            'unanalyzed_articles': unanalyzed_articles
+                            'unprocessed_articles': unanalyzed_articles  # ← ТОЗИ РЕД
                         }
             except psycopg2.Error as e:
                 print(f"❌ Грешка при статистики: {e}")
