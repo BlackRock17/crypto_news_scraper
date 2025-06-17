@@ -107,3 +107,45 @@ class PostgreSQLDatabaseManager:
             except psycopg2.Error as e:
                 print(f"❌ Грешка при запазване: {e}")
                 return False
+
+        def save_multiple_articles(self, articles):
+            """Запазва множество статии наведнъж (по-бързо)"""
+            print(f"💾 Запазване на {len(articles)} статии...")
+
+            saved_count = 0
+            duplicate_count = 0
+
+            try:
+                with self.get_connection() as conn:
+                    with conn.cursor() as cursor:
+
+                        for article in articles:
+                            # Проверяваме за дублиращи се статии
+                            cursor.execute("SELECT 1 FROM articles WHERE url = %s", (article['url'],))
+                            if cursor.fetchone():
+                                duplicate_count += 1
+                                continue
+
+                            # Запазваме статията
+                            cursor.execute('''
+                                INSERT INTO articles 
+                                (url, title, content, author, published_date, content_length)
+                                VALUES (%s, %s, %s, %s, %s, %s)
+                            ''', (
+                                article['url'],
+                                article['title'],
+                                article['content'],
+                                article['author'],
+                                str(article['date']),
+                                article['content_length']
+                            ))
+
+                            saved_count += 1
+
+                        conn.commit()
+
+            except psycopg2.Error as e:
+                print(f"❌ Грешка при запазване: {e}")
+
+            print(f"📊 Резултат: {saved_count} нови статии, {duplicate_count} дублиращи се")
+            return saved_count, duplicate_count
