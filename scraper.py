@@ -448,7 +448,7 @@ class CoinDeskScraper:
 
 def test_single_article():
     """Тества scraping на една статия"""
-    scraper = CoinDeskScraper(use_database=False)
+    scraper = CoinDeskScraper(use_database=True)
 
     test_url = "https://www.coindesk.com/markets/2025/06/09/bitwise-proshares-file-for-etfs-tracking-soaring-circle-shares"
 
@@ -462,6 +462,19 @@ def test_single_article():
         print(f"   👤 Автор: {article['author']}")
         print(f"   📊 Дължина: {article['content_length']} символа")
         print(f"   📝 Първи 300 символа: {article['content'][:300]}...")
+
+        # ДОБАВИ ТЕЗИ РЕДОВЕ:
+        print(f"\n💾 Тестване на запазване в PostgreSQL...")
+        success = scraper.db.save_article(article)
+        if success:
+            print("✅ Статията е запазена в базата данни!")
+
+            # Показваме статистики
+            stats = scraper.db.get_database_stats()
+            print(f"📊 Статистики: {stats}")
+        else:
+            print("❌ Грешка при запазване")
+
         return True
     else:
         print("❌ Неуспешно извличане на статията")
