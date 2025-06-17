@@ -76,7 +76,6 @@ class PostgreSQLDatabaseManager:
                     conn.commit()
 
         def save_article(self, article_data):
-            """Запазва една статия в базата данни"""
             try:
                 with self.get_connection() as conn:
                     with conn.cursor() as cursor:
@@ -102,7 +101,16 @@ class PostgreSQLDatabaseManager:
 
                         conn.commit()
                         print(f"✅ Запазена статия: {article_data['title'][:50]}...")
+
+                        # ДОБАВИ ТОЗИ РЕД:
+                        self.record_scraped_url(article_data['url'])
+
                         return True
+
+            except psycopg2.Error as e:
+                print(f"❌ Грешка при запазване: {e}")
+                return False
+
 
             except psycopg2.Error as e:
                 print(f"❌ Грешка при запазване: {e}")
