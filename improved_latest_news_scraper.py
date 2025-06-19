@@ -1,211 +1,5 @@
 import sqlite3
-
 import requests
-
-
-def _extract_content_improved(self, soup):
-    """КОРЕННО ПОДОБРЕНО извличане на съдържанието за CoinDesk"""
-
-    print("🔍 Започвам FIXED content extraction...")
-
-    # СТРАТЕГИЯ 1: CoinDesk-специфични patterns
-    print("🎯 СТРАТЕГИЯ 1: CoinDesk patterns...")
-
-    # Намираме "What to know:" marker и взимаме контейнера
-    what_to_know = soup.find(text=lambda text: text and 'What to know:' in text)
-    if what_to_know:
-        print("✅ Намерен 'What to know:' marker")
-
-        # Намираме parent container
-        current = what_to_know.parent
-        while current and current.name not in ['main', 'article', 'div', 'section']:
-            current = current.parent
-
-        if current:
-            # Вземаме всички <p> в този container
-            container_paragraphs = current.find_all('p')
-            meaningful_text = []
-
-            for p in container_paragraphs:
-                text = p.get_text().strip()
-                if (text and
-                        len(text) > 30 and
-                        'See all newsletters' not in text and
-                        'What to know:' not in text and
-                        not text.startswith('[')):  # Премахваме price links
-                    meaningful_text.append(text)
-
-            if meaningful_text:
-                content = '\n\n'.join(meaningful_text)
-                print(f"✅ CoinDesk pattern extraction: {len(content)} chars")
-                if len(content) > 200:
-                    return content
-
-    # СТРАТЕГИЯ 2: Търсим main content container
-    print("🎯 СТРАТЕГИЯ 2: Main containers...")
-    main_selectors = [
-        'main',
-        'article',
-        '[role="main"]',
-        '.article-content',
-        '.post-content',
-        '.entry-content',
-        'div[data-module="ArticleBody"]'
-    ]
-
-    for selector in main_selectors:
-        container = soup.select_one(selector)
-        if container:
-            print(f"✅ Намерен container: {selector}")
-            paragraphs = container.find_all('p')
-            content = self._process_paragraphs_fixed(paragraphs)
-            if len(content) > 200:
-                print(f"✅ Main container extraction: {len(content)} chars")
-                return content
-
-    # СТРАТЕГИЯ 3: Всички <p> tags с по-умна филтрация
-    print("🎯 СТРАТЕГИЯ 3: Всички <p> tags...")
-    all_paragraphs = soup.find_all('p')
-    print(f"📊 Намерени {len(all_paragraphs)} общо <p> tags")
-
-    if all_paragraphs:
-        content = self._process_paragraphs_fixed(all_paragraphs)
-        if len(content) > 100:
-            print(f"✅ All paragraphs extraction: {len(content)} chars")
-            return content
-
-    # СТРАТЕГИЯ 4: Търсим текст в div елементи
-    print("🎯 СТРАТЕГИЯ 4: Div text extraction...")
-
-    # Намираме всички div-ове с текст
-    text_divs = soup.find_all('div')
-    meaningful_texts = []
-
-    for div in text_divs:
-        # Взимаме директния текст от div-а
-        direct_text = div.get_text(separator=' ', strip=True)
-
-        # Филтрираме по дължина и съдържание
-        if (50 < len(direct_text) < 2000 and
-                '.' in direct_text and  # Трябва да има изречения
-                not direct_text.startswith('[') and  # Не започва с [price links]
-                'See all newsletters' not in direct_text):
-            meaningful_texts.append(direct_text)
-
-    if meaningful_texts:
-        # Вземаме най-дългите и най-значимите текстове
-        meaningful_texts.sort(key=len, reverse=True)
-        selected_texts = meaningful_texts[:5]  # Първите 5 най-дълги
-
-        content = '\n\n'.join(selected_texts)
-        if len(content) > 200:
-            print(f"✅ Div text extraction: {len(content)} chars")
-            return content
-
-    # СТРАТЕГИЯ 5: Fallback - body text
-    print("🎯 СТРАТЕГИЯ 5: Body fallback...")
-    body = soup.find('body')
-    if body:
-        # Премахваме нежелани елементи
-        for unwanted in body(['script', 'style', 'nav', 'header', 'footer', 'aside']):
-            unwanted.decompose()
-
-        body_text = body.get_text(separator=' ', strip=True)
-
-        # Разделяме по изречения и вземаме смислените
-        sentences = [s.strip() for s in body_text.split('.') if s.strip()]
-        meaningful_sentences = []
-
-        for sentence in sentences:
-            if (20 < len(sentence) < 500 and
-                    not sentence.startswith('[') and
-                    'See all newsletters' not in sentence and
-                    'Sign up' not in sentence):
-                meaningful_sentences.append(sentence)
-
-        if meaningful_sentences:
-            # Вземаме първите 20 изречения
-            content = '. '.join(meaningful_sentences[:20]) + '.'
-            if len(content) > 200:
-                print(f"✅ Body fallback extraction: {len(content)} chars")
-                return content
-
-    print("❌ Всички стратегии неуспешни")
-    return "Съдържанието не може да бъде извлечено"
-
-
-def _process_paragraphs_fixed(self, paragraphs):
-    """Подобрена обработка на параграфи"""
-    meaningful_paragraphs = []
-
-    for p in paragraphs:
-        text = p.get_text().strip()
-
-        # По-строга филтрация
-        if self._is_meaningful_paragraph_fixed(text):
-            meaningful_paragraphs.append(text)
-
-    return '\n\n'.join(meaningful_paragraphs)
-
-
-def _is_meaningful_paragraph_fixed(self, text):
-    """Подобрена проверка за смислени параграфи"""
-
-    # Основни проверки
-    if len(text) < 20:
-        return False
-
-    # Изключваме price links и navigation
-    if text.startswith('[') and text.endswith(']'):
-        return False
-
-    # Изключваме нежелани фрази
-    exclude_phrases = [
-        'Sign up', 'Subscribe', 'Newsletter', 'See all newsletters',
-        'Don\'t miss', 'By signing up', 'privacy policy', 'terms of use',
-        'Cookie', 'Advertisement', 'Sponsored', 'Follow us', 'Share this',
-        'Read more', 'Click here', 'Download', 'Watch', 'Listen',
-        'Back to menu', 'What to know:', 'See more'
-    ]
-
-
-def _is_meaningful_paragraph_fixed(self, text):
-    """Подобрена проверка за смислени параграфи"""
-
-    # Основни проверки
-    if len(text) < 20:
-        return False
-
-    # Изключваме price links и navigation
-    if text.startswith('[') and text.endswith(']'):
-        return False
-
-    # Изключваме нежелани фрази
-    exclude_phrases = [
-        'Sign up', 'Subscribe', 'Newsletter', 'See all newsletters',
-        'Don\'t miss', 'By signing up', 'privacy policy', 'terms of use',
-        'Cookie', 'Advertisement', 'Sponsored', 'Follow us', 'Share this',
-        'Read more', 'Click here', 'Download', 'Watch', 'Listen',
-        'Back to menu', 'What to know:', 'See more'
-    ]
-
-    text_lower = text.lower()
-    for phrase in exclude_phrases:
-        if phrase.lower() in text_lower:
-            return False
-
-    # Трябва да има поне едно изречение
-    if text.count('.') < 1 and text.count('!') < 1 and text.count('?') < 1:
-        return False
-
-    # Не трябва да е само цифри или кратки фрази
-    words = text.split()
-    if len(words) < 5:
-        return False
-
-    return True
-
-
 from bs4 import BeautifulSoup
 import time
 from datetime import datetime, timedelta
@@ -221,10 +15,212 @@ from config import (
 )
 from database import DatabaseManager
 
+def _extract_content_improved(self, soup):
+    """RADICALLY IMPROVED content extraction for CoinDesk"""
+
+    print("🔍 Starting FIXED content extraction...")
+
+    # STRATEGY 1: CoinDesk-specific patterns
+    print("🎯 STRATEGY 1: CoinDesk patterns...")
+
+    # Find "What to know:" marker and take the container
+    what_to_know = soup.find(text=lambda text: text and 'What to know:' in text)
+    if what_to_know:
+        print("✅ Found 'What to know:' marker")
+
+        # Find parent container
+        current = what_to_know.parent
+        while current and current.name not in ['main', 'article', 'div', 'section']:
+            current = current.parent
+
+        if current:
+            # Take all <p> in this container
+            container_paragraphs = current.find_all('p')
+            meaningful_text = []
+
+            for p in container_paragraphs:
+                text = p.get_text().strip()
+                if (text and
+                        len(text) > 30 and
+                        'See all newsletters' not in text and
+                        'What to know:' not in text and
+                        not text.startswith('[')):  # Remove price links
+                    meaningful_text.append(text)
+
+            if meaningful_text:
+                content = '\n\n'.join(meaningful_text)
+                print(f"✅ CoinDesk pattern extraction: {len(content)} chars")
+                if len(content) > 200:
+                    return content
+
+    # STRATEGY 2: Look for main content container
+    print("🎯 STRATEGY 2: Main containers...")
+    main_selectors = [
+        'main',
+        'article',
+        '[role="main"]',
+        '.article-content',
+        '.post-content',
+        '.entry-content',
+        'div[data-module="ArticleBody"]'
+    ]
+
+    for selector in main_selectors:
+        container = soup.select_one(selector)
+        if container:
+            print(f"✅ Found container: {selector}")
+            paragraphs = container.find_all('p')
+            content = self._process_paragraphs_fixed(paragraphs)
+            if len(content) > 200:
+                print(f"✅ Main container extraction: {len(content)} chars")
+                return content
+
+    # STRATEGY 3: All <p> tags with smarter filtering
+    print("🎯 STRATEGY 3: All <p> tags...")
+    all_paragraphs = soup.find_all('p')
+    print(f"📊 Found {len(all_paragraphs)} total <p> tags")
+
+    if all_paragraphs:
+        content = self._process_paragraphs_fixed(all_paragraphs)
+        if len(content) > 100:
+            print(f"✅ All paragraphs extraction: {len(content)} chars")
+            return content
+
+    # STRATEGY 4: Look for text in div elements
+    print("🎯 STRATEGY 4: Div text extraction...")
+
+    # Find all divs with text
+    text_divs = soup.find_all('div')
+    meaningful_texts = []
+
+    for div in text_divs:
+        # Get direct text from div
+        direct_text = div.get_text(separator=' ', strip=True)
+
+        # Filter by length and content
+        if (50 < len(direct_text) < 2000 and
+                '.' in direct_text and  # Must have sentences
+                not direct_text.startswith('[') and  # Doesn't start with [price links]
+                'See all newsletters' not in direct_text):
+            meaningful_texts.append(direct_text)
+
+    if meaningful_texts:
+        # Take the longest and most meaningful texts
+        meaningful_texts.sort(key=len, reverse=True)
+        selected_texts = meaningful_texts[:5]  # First 5 longest
+
+        content = '\n\n'.join(selected_texts)
+        if len(content) > 200:
+            print(f"✅ Div text extraction: {len(content)} chars")
+            return content
+
+    # STRATEGY 5: Fallback - body text
+    print("🎯 STRATEGY 5: Body fallback...")
+    body = soup.find('body')
+    if body:
+        # Remove unwanted elements
+        for unwanted in body(['script', 'style', 'nav', 'header', 'footer', 'aside']):
+            unwanted.decompose()
+
+        body_text = body.get_text(separator=' ', strip=True)
+
+        # Split by sentences and take meaningful ones
+        sentences = [s.strip() for s in body_text.split('.') if s.strip()]
+        meaningful_sentences = []
+
+        for sentence in sentences:
+            if (20 < len(sentence) < 500 and
+                    not sentence.startswith('[') and
+                    'See all newsletters' not in sentence and
+                    'Sign up' not in sentence):
+                meaningful_sentences.append(sentence)
+
+        if meaningful_sentences:
+            # Take first 20 sentences
+            content = '. '.join(meaningful_sentences[:20]) + '.'
+            if len(content) > 200:
+                print(f"✅ Body fallback extraction: {len(content)} chars")
+                return content
+
+    print("❌ All strategies unsuccessful")
+    return "Content cannot be extracted"
+
+
+def _process_paragraphs_fixed(self, paragraphs):
+    """Improved paragraph processing"""
+    meaningful_paragraphs = []
+
+    for p in paragraphs:
+        text = p.get_text().strip()
+
+        # Stricter filtering
+        if self._is_meaningful_paragraph_fixed(text):
+            meaningful_paragraphs.append(text)
+
+    return '\n\n'.join(meaningful_paragraphs)
+
+
+def _is_meaningful_paragraph_fixed(self, text):
+    """Improved check for meaningful paragraphs"""
+
+    # Basic checks
+    if len(text) < 20:
+        return False
+
+    # Exclude price links and navigation
+    if text.startswith('[') and text.endswith(']'):
+        return False
+
+    # Exclude unwanted phrases
+    exclude_phrases = [
+        'Sign up', 'Subscribe', 'Newsletter', 'See all newsletters',
+        'Don\'t miss', 'By signing up', 'privacy policy', 'terms of use',
+        'Cookie', 'Advertisement', 'Sponsored', 'Follow us', 'Share this',
+        'Read more', 'Click here', 'Download', 'Watch', 'Listen',
+        'Back to menu', 'What to know:', 'See more'
+    ]
+
+
+def _is_meaningful_paragraph_fixed(self, text):
+    """Improved check for meaningful paragraphs"""
+
+    # Basic checks
+    if len(text) < 20:
+        return False
+
+    # Exclude price links and navigation
+    if text.startswith('[') and text.endswith(']'):
+        return False
+
+    # Exclude unwanted phrases
+    exclude_phrases = [
+        'Sign up', 'Subscribe', 'Newsletter', 'See all newsletters',
+        'Don\'t miss', 'By signing up', 'privacy policy', 'terms of use',
+        'Cookie', 'Advertisement', 'Sponsored', 'Follow us', 'Share this',
+        'Read more', 'Click here', 'Download', 'Watch', 'Listen',
+        'Back to menu', 'What to know:', 'See more'
+    ]
+
+    text_lower = text.lower()
+    for phrase in exclude_phrases:
+        if phrase.lower() in text_lower:
+            return False
+
+    # Must have at least one sentence
+    if text.count('.') < 1 and text.count('!') < 1 and text.count('?') < 1:
+        return False
+
+    # Shouldn't be just numbers or short phrases
+    words = text.split()
+    if len(words) < 5:
+        return False
+
+    return True
+
 
 class CoinDeskLatestNewsScraper:
     def __init__(self, use_database=True):
-        print("🚀 Инициализиране на CoinDesk Latest News Scraper...")
+        print("🚀 Initializing CoinDesk Latest News Scraper...")
         self.session = requests.Session()
 
         # Headers
@@ -236,76 +232,76 @@ class CoinDeskLatestNewsScraper:
         }
         self.session.headers.update(simple_headers)
 
-        # URL за latest news
+        # URL for latest news
         self.latest_news_url = "https://www.coindesk.com/latest-crypto-news"
 
-        # Database интеграция
+        # Database integration
         self.use_database = use_database
         if use_database:
             self.db = DatabaseManager()
         else:
             self.db = None
 
-        print("✅ Latest News Scraper готов!")
+        print("✅ Latest News Scraper ready!")
 
     def get_articles_by_date_filter(self, date_filter='today', max_articles=50):
         """
-        Получава статии от latest-crypto-news с date филтър
+        Gets articles from latest-crypto-news with date filter
 
-        date_filter може да е:
-        - 'today' - само днешни статии
-        - 'yesterday' - вчерашни статии
-        - '2025-06-10' - конкретна дата
-        - 'last_3_days' - последните 3 дни
-        - 'all' - всички (до max_articles)
+        date_filter can be:
+        - 'today' - only today's articles
+        - 'yesterday' - yesterday's articles
+        - '2025-06-10' - specific date
+        - 'last_3_days' - last 3 days
+        - 'all' - all (up to max_articles)
         """
-        print(f"🔍 Търсене на статии с филтър: {date_filter}")
+        print(f"🔍 Searching for articles with filter: {date_filter}")
 
-        # Определяме target дати
+        # Determine target dates
         target_dates = self._get_target_dates(date_filter)
-        print(f"📅 Target дати: {target_dates}")
+        print(f"📅 Target dates: {target_dates}")
 
-        # Започваме да скрапваме страници
+        # Start scraping pages
         all_articles = []
         page_offset = 0
         pages_checked = 0
-        max_pages = 10  # Ограничение за безопасност
+        max_pages = 10  # Safety limit
 
         while len(all_articles) < max_articles and pages_checked < max_pages:
-            print(f"📄 Обработка на страница {pages_checked + 1}...")
+            print(f"📄 Processing page {pages_checked + 1}...")
 
-            # Скрапваме текущата страница
+            # Scrape current page
             page_articles = self._scrape_latest_news_page(page_offset)
 
             if not page_articles:
-                print("❌ Няма повече статии")
+                print("❌ No more articles")
                 break
 
-            # Филтрираме по дата
+            # Filter by date
             filtered_articles = []
             for article in page_articles:
                 article_date = self._extract_date_from_article_data(article)
                 if article_date in target_dates or date_filter == 'all':
                     filtered_articles.append(article)
                 elif date_filter != 'all' and article_date < min(target_dates):
-                    # Ако статията е по-стара от най-старата target дата, спираме
-                    print(f"⏹️ Достигнахме стари статии ({article_date}), спираме")
+                    # If article is older than oldest target date, stop
+                    print(f"⏹️ Reached old articles ({article_date}), stopping")
                     return all_articles[:max_articles]
 
             all_articles.extend(filtered_articles)
             pages_checked += 1
-            page_offset += 16  # CoinDesk показва 16 статии на страница
+            page_offset += 16  # CoinDesk shows 16 articles per page
 
-            print(f"📊 Страница {pages_checked}: {len(filtered_articles)} релевантни статии")
+            print(f"📊 Page {pages_checked}: {len(filtered_articles)} relevant articles")
 
-            # Малка пауза между страници
+            # Small pause between pages
             time.sleep(2)
 
-        print(f"✅ Намерени {len(all_articles)} статии с филтър '{date_filter}'")
+        print(f"✅ Found {len(all_articles)} articles with filter '{date_filter}'")
         return all_articles[:max_articles]
 
     def _get_target_dates(self, date_filter):
-        """Връща списък с target дати за филтриране"""
+        """Returns list of target dates for filtering"""
         today = datetime.now().date()
 
         if date_filter == 'today':
@@ -318,17 +314,17 @@ class CoinDeskLatestNewsScraper:
         elif date_filter == 'last_week':
             return [today - timedelta(days=i) for i in range(7)]
         elif isinstance(date_filter, str) and re.match(r'\d{4}-\d{2}-\d{2}', date_filter):
-            # Конкретна дата в формат YYYY-MM-DD
+            # Specific date in YYYY-MM-DD format
             target_date = datetime.strptime(date_filter, '%Y-%m-%d').date()
             return [target_date]
         else:
-            # 'all' или неразпознат филтър
+            # 'all' or unrecognized filter
             return []
 
     def _scrape_latest_news_page(self, offset=0):
-        """Скрапва една страница от latest-crypto-news"""
+        """Scrapes one page from latest-crypto-news"""
         try:
-            # URL за pagination може да използва offset параметър
+            # URL for pagination might use offset parameter
             url = f"{self.latest_news_url}?offset={offset}" if offset > 0 else self.latest_news_url
 
             response = self.session.get(url, timeout=15)
@@ -336,21 +332,21 @@ class CoinDeskLatestNewsScraper:
 
             soup = BeautifulSoup(response.content, 'html.parser')
 
-            # Търсим статии - обикновено са в article elements или специфични containers
+            # Look for articles - usually in article elements or specific containers
             articles = []
 
-            # Стратегия 1: Търсим article elements
+            # Strategy 1: Look for article elements
             article_elements = soup.find_all('article')
-            print(f"🔍 Намерени {len(article_elements)} article elements")
+            print(f"🔍 Found {len(article_elements)} article elements")
 
             for article_elem in article_elements:
                 article_data = self._extract_article_data_from_element(article_elem)
                 if article_data:
                     articles.append(article_data)
 
-            # Стратегия 2: Ако няма article elements, търсим по линкове
+            # Strategy 2: If no article elements, look for links
             if not articles:
-                print("🔍 Търся статии по линкове...")
+                print("🔍 Looking for articles by links...")
                 link_elements = soup.find_all('a', href=True)
                 for link in link_elements:
                     href = link['href']
@@ -363,16 +359,16 @@ class CoinDeskLatestNewsScraper:
                         if article_data['title'] and len(article_data['title']) > 15:
                             articles.append(article_data)
 
-            return articles[:16]  # CoinDesk показва 16 на страница
+            return articles[:16]  # CoinDesk shows 16 per page
 
         except Exception as e:
-            print(f"❌ Грешка при scraping на страница: {e}")
+            print(f"❌ Error scraping page: {e}")
             return []
 
     def _extract_article_data_from_element(self, article_elem):
-        """Извлича данни за статия от article element"""
+        """Extracts article data from article element"""
         try:
-            # Търсим линк в article element
+            # Look for link in article element
             link = article_elem.find('a', href=True)
             if not link:
                 return None
@@ -381,16 +377,16 @@ class CoinDeskLatestNewsScraper:
             if not self._is_valid_article_url(href):
                 return None
 
-            # Извличаме заглавието
+            # Extract title
             title = ""
-            # Търсим h1, h2, h3 в article
+            # Look for h1, h2, h3 in article
             for header_tag in ['h1', 'h2', 'h3']:
                 header = article_elem.find(header_tag)
                 if header:
                     title = header.get_text().strip()
                     break
 
-            # Ако няма header, вземаме от link text
+            # If no header, take from link text
             if not title:
                 title = link.get_text().strip()
 
@@ -404,11 +400,11 @@ class CoinDeskLatestNewsScraper:
             }
 
         except Exception as e:
-            print(f"⚠️ Грешка при извличане на article data: {e}")
+            print(f"⚠️ Error extracting article data: {e}")
             return None
 
     def _is_valid_article_url(self, href):
-        """Проверява дали URL е валиден за статия"""
+        """Checks if URL is valid for article"""
         if not href or href in ['#', '/', '']:
             return False
 
@@ -418,7 +414,7 @@ class CoinDeskLatestNewsScraper:
         if href.startswith('#') or href.startswith('mailto:') or href.startswith('tel:'):
             return False
 
-        # Изключваме системни страници
+        # Exclude system pages
         exclude_patterns = [
             '/newsletters/', '/podcasts/', '/events/', '/about/', '/careers/',
             '/advertise/', '/price/', '/author/', '/tag/', '/sponsored-content/',
@@ -429,7 +425,7 @@ class CoinDeskLatestNewsScraper:
             if pattern in href:
                 return False
 
-        # Приемаме статии с дата или от news категории
+        # Accept articles with date or from news categories
         date_patterns = [
             r'/\d{4}/\d{2}/\d{2}/',  # /2025/06/10/
             r'/2025/', r'/2024/'
@@ -443,7 +439,7 @@ class CoinDeskLatestNewsScraper:
         return has_date or has_category
 
     def _make_full_url(self, href):
-        """Прави пълен URL от relative href"""
+        """Makes full URL from relative href"""
         if href.startswith('http'):
             return href
         elif href.startswith('/'):
@@ -452,10 +448,10 @@ class CoinDeskLatestNewsScraper:
             return f"https://www.coindesk.com/{href}"
 
     def _extract_date_from_article_data(self, article_data):
-        """Извлича дата от article data"""
+        """Extracts date from article data"""
         url = article_data['url']
 
-        # Опитваме да извлечем от URL
+        # Try to extract from URL
         date_match = re.search(r'/(\d{4})/(\d{2})/(\d{2})/', url)
         if date_match:
             year, month, day = date_match.groups()
@@ -464,31 +460,31 @@ class CoinDeskLatestNewsScraper:
             except:
                 pass
 
-        # Ако няма дата в URL, приемаме че е от днеска (latest news)
+        # If no date in URL, assume it's from today (latest news)
         return datetime.now().date()
 
     def scrape_articles_smart(self, date_filter='today', limit=10, save_to_db=True):
         """
-        Smart scraping с date филтриране
+        Smart scraping with date filtering
 
         date_filter:
-        - 'today' - само днешни статии
-        - 'yesterday' - вчерашни статии
-        - '2025-06-10' - конкретна дата
-        - 'last_3_days' - последните 3 дни
+        - 'today' - only today's articles
+        - 'yesterday' - yesterday's articles
+        - '2025-06-10' - specific date
+        - 'last_3_days' - last 3 days
         """
-        print(f"🎯 Smart scraping: {limit} статии с филтър '{date_filter}'")
+        print(f"🎯 Smart scraping: {limit} articles with filter '{date_filter}'")
 
-        # Вземаме статиите с филтър
+        # Get articles with filter
         article_links = self.get_articles_by_date_filter(date_filter, max_articles=limit * 2)
 
         if not article_links:
-            print("❌ Не са намерени статии с този филтър")
+            print("❌ No articles found with this filter")
             return []
 
-        # Database филтриране
+        # Database filtering
         if self.db and save_to_db:
-            print("🔍 Проверяване за дублиращи се URLs...")
+            print("🔍 Checking for duplicate URLs...")
             new_article_links = []
             skipped_count = 0
 
@@ -500,17 +496,17 @@ class CoinDeskLatestNewsScraper:
                     skipped_count += 1
                     self.db.record_scraped_url(url)
 
-            print(f"📊 {len(new_article_links)} нови статии, {skipped_count} вече scraped")
+            print(f"📊 {len(new_article_links)} new articles, {skipped_count} already scraped")
             article_links = new_article_links
 
-        # Ограничаваме до лимита
+        # Limit to specified number
         article_links = article_links[:limit]
 
         if not article_links:
-            print("ℹ️ Всички статии са вече scraped")
+            print("ℹ️ All articles already scraped")
             return []
 
-        # Scraping на статиите
+        # Scraping articles
         scraped_articles = []
         successful_count = 0
         failed_count = 0
@@ -529,14 +525,14 @@ class CoinDeskLatestNewsScraper:
             else:
                 failed_count += 1
 
-        print(f"\n🎉 Smart scraping завършен!")
-        print(f"📊 Резултат: {successful_count} успешни, {failed_count} неуспешни статии")
+        print(f"\n🎉 Smart scraping completed!")
+        print(f"📊 Result: {successful_count} successful, {failed_count} failed articles")
 
         return scraped_articles
 
     def scrape_single_article(self, article_url):
-        """Извлича съдържанието на една статия (използва същата логика като стария scraper)"""
-        print(f"📄 Scraping статия: {article_url}")
+        """Extracts content of one article (uses same logic as old scraper)"""
+        print(f"📄 Scraping article: {article_url}")
 
         try:
             time.sleep(SCRAPING_CONFIG['delay_between_requests'])
@@ -547,14 +543,14 @@ class CoinDeskLatestNewsScraper:
             content_text = response.content.decode('utf-8', errors='ignore')
             soup = BeautifulSoup(content_text, 'html.parser')
 
-            # Използваме същите методи за извличане като в стария scraper
+            # Use same extraction methods as old scraper
             title = self._extract_title_improved(soup)
             content = self._extract_content_improved(soup)
             date = self._extract_date_improved(soup)
             author = self._extract_author_improved(soup)
 
             if len(content) < SCRAPING_CONFIG['min_article_length']:
-                print(f"⚠️  Статията е твърде кратка ({len(content)} chars)")
+                print(f"⚠️  Article too short ({len(content)} chars)")
                 return None
 
             article_data = {
@@ -567,14 +563,14 @@ class CoinDeskLatestNewsScraper:
                 'content_length': len(content)
             }
 
-            print(f"✅ Успешно извлечена статия: {title[:50]}... ({len(content)} chars)")
+            print(f"✅ Successfully extracted article: {title[:50]}... ({len(content)} chars)")
             return article_data
 
         except Exception as e:
-            print(f"❌ Грешка при scraping на {article_url}: {str(e)}")
+            print(f"❌ Error scraping {article_url}: {str(e)}")
             return None
 
-    # Същите методи за извличане на съдържание като в стария scraper
+    # Same content extraction methods as old scraper
     def _extract_title_improved(self, soup):
         h1_tags = soup.find_all('h1')
         for h1 in h1_tags:
@@ -592,12 +588,12 @@ class CoinDeskLatestNewsScraper:
             title = re.sub(r'\s*\|\s*CoinDesk.*$', '', title)
             if title:
                 return title
-        return "Неизвестно заглавие"
+        return "Unknown title"
 
     def _extract_content_improved(self, soup):
-        print("🔍 Започвам подобрено извличане на съдържание...")
+        print("🔍 Starting improved content extraction...")
 
-        # СТРАТЕГИЯ 1: Main containers
+        # STRATEGY 1: Main containers
         main_selectors = [
             'main',
             'article',
@@ -610,60 +606,60 @@ class CoinDeskLatestNewsScraper:
         for selector in main_selectors:
             container = soup.select_one(selector)
             if container:
-                print(f"✅ Намерен main container: {selector}")
+                print(f"✅ Found main container: {selector}")
                 paragraphs = container.find_all('p')
                 content = self._process_paragraphs(paragraphs)
                 if len(content) > 200:
-                    print(f"✅ Извлечени {len(content)} chars от {selector}")
+                    print(f"✅ Extracted {len(content)} chars from {selector}")
                     return content
 
-        # СТРАТЕГИЯ 2: Всички <p> tags но с по-умна филтрация
-        print("🔍 Търся всички <p> tags...")
+        # STRATEGY 2: All <p> tags but with smarter filtering
+        print("🔍 Looking for all <p> tags...")
         all_paragraphs = soup.find_all('p')
-        print(f"📊 Намерени {len(all_paragraphs)} общо <p> tags")
+        print(f"📊 Found {len(all_paragraphs)} total <p> tags")
 
         if all_paragraphs:
             content = self._process_paragraphs(all_paragraphs)
             if len(content) > 100:
-                print(f"✅ Извлечени {len(content)} chars от всички <p> tags")
+                print(f"✅ Extracted {len(content)} chars from all <p> tags")
                 return content
 
-        # СТРАТЕГИЯ 3: Div containers с текст
-        print("🔍 Търся div containers с текст...")
+        # STRATEGY 3: Div containers with text
+        print("🔍 Looking for div containers with text...")
         text_divs = soup.find_all('div')
         meaningful_text = []
 
         for div in text_divs:
-            # Вземаме само direct text, не nested elements
+            # Take only direct text, not nested elements
             direct_text = div.get_text().strip()
-            if 50 < len(direct_text) < 1000:  # Разумна дължина
+            if 50 < len(direct_text) < 1000:  # Reasonable length
                 meaningful_text.append(direct_text)
 
         if meaningful_text:
-            content = '\n\n'.join(meaningful_text[:10])  # Вземаме първите 10
+            content = '\n\n'.join(meaningful_text[:10])  # Take first 10
             if len(content) > 100:
-                print(f"✅ Извлечени {len(content)} chars от div containers")
+                print(f"✅ Extracted {len(content)} chars from div containers")
                 return content
 
-        # СТРАТЕГИЯ 4: Fallback - всичко в body
-        print("🔍 Fallback: Вземам всичко от body...")
+        # STRATEGY 4: Fallback - everything from body
+        print("🔍 Fallback: Taking everything from body...")
         body = soup.find('body')
         if body:
-            # Премахваме script и style tags
+            # Remove script and style tags
             for script in body(["script", "style", "nav", "header", "footer"]):
                 script.decompose()
 
             body_text = body.get_text()
-            # Почистваме и вземаме разумна част
+            # Clean and take reasonable part
             lines = [line.strip() for line in body_text.split('\n') if line.strip()]
-            content = '\n'.join(lines[:50])  # Първите 50 реда
+            content = '\n'.join(lines[:50])  # First 50 lines
 
             if len(content) > 100:
-                print(f"✅ Fallback извлечени {len(content)} chars от body")
+                print(f"✅ Fallback extracted {len(content)} chars from body")
                 return content
 
-        print("❌ Не успях да извлека съдържание")
-        return "Съдържанието не може да бъде извлечено"
+        print("❌ Failed to extract content")
+        return "Content cannot be extracted"
 
     def _process_paragraphs(self, paragraphs):
         meaningful_paragraphs = []
@@ -674,11 +670,11 @@ class CoinDeskLatestNewsScraper:
         return '\n\n'.join(meaningful_paragraphs)
 
     def _is_meaningful_paragraph(self, text):
-        """Проверява дали параграфа е смислен"""
-        if len(text) < 20:  # Твърде кратък
+        """Checks if paragraph is meaningful"""
+        if len(text) < 20:  # Too short
             return False
 
-        # Изключваме нежелани фрази
+        # Exclude unwanted phrases
         exclude_phrases = [
             'Sign up', 'Subscribe', 'Newsletter', 'See all newsletters',
             'Don\'t miss', 'By signing up', 'privacy policy', 'terms of use',
@@ -691,8 +687,8 @@ class CoinDeskLatestNewsScraper:
             if phrase.lower() in text_lower:
                 return False
 
-        # Проверяваме за нормални изречения
-        if text.count('.') < 1:  # Няма изречения
+        # Check for normal sentences
+        if text.count('.') < 1:  # No sentences
             return False
 
         return True
@@ -711,18 +707,18 @@ class CoinDeskLatestNewsScraper:
         author_meta = soup.find('meta', attrs={'name': 'author'})
         if author_meta and author_meta.get('content'):
             return author_meta['content'].strip()
-        return "Неизвестен автор"
+        return "Unknown author"
 
     def get_scraping_status_by_date(self, date_str):
-        """Показва статус на scraping за дадена дата"""
+        """Shows scraping status for given date"""
         if not self.db:
-            return {'error': 'Database не е активна'}
+            return {'error': 'Database not active'}
 
         try:
             conn = self.db.get_connection() if hasattr(self.db, 'get_connection') else sqlite3.connect(self.db.db_path)
             cursor = conn.cursor()
 
-            # Статии от тази дата
+            # Articles from this date
             cursor.execute("""
                 SELECT COUNT(*) FROM articles 
                 WHERE url LIKE ? OR published_date = ?
@@ -730,7 +726,7 @@ class CoinDeskLatestNewsScraper:
 
             scraped_count = cursor.fetchone()[0]
 
-            # Намираме потенциални статии от latest news
+            # Find potential articles from latest news
             potential_articles = self.get_articles_by_date_filter(date_str, max_articles=50)
             potential_count = len(potential_articles)
 
@@ -754,25 +750,25 @@ class CoinDeskLatestNewsScraper:
             return {'error': str(e)}
 
 
-# Тестови функции
+# Test functions
 def test_latest_news_scraper():
-    """Тества новия latest news scraper"""
-    print("=== ТЕСТ НА LATEST NEWS SCRAPER ===")
+    """Tests the new latest news scraper"""
+    print("=== LATEST NEWS SCRAPER TEST ===")
 
     scraper = CoinDeskLatestNewsScraper(use_database=False)
 
-    # Тест 1: Днешни статии
-    print("\n1. Тест: Днешни статии")
+    # Test 1: Today's articles
+    print("\n1. Test: Today's articles")
     today_articles = scraper.get_articles_by_date_filter('today', max_articles=10)
-    print(f"📊 Намерени {len(today_articles)} днешни статии")
+    print(f"📊 Found {len(today_articles)} today's articles")
 
     for i, article in enumerate(today_articles[:3], 1):
         print(f"   {i}. {article['title'][:60]}...")
 
-    # Тест 2: Smart scraping
-    print("\n2. Тест: Smart scraping на 3 статии")
+    # Test 2: Smart scraping
+    print("\n2. Test: Smart scraping of 3 articles")
     scraped = scraper.scrape_articles_smart('today', limit=3, save_to_db=False)
-    print(f"📊 Успешно scraped: {len(scraped)} статии")
+    print(f"📊 Successfully scraped: {len(scraped)} articles")
 
     return len(scraped) > 0
 
@@ -780,6 +776,6 @@ def test_latest_news_scraper():
 if __name__ == "__main__":
     success = test_latest_news_scraper()
     if success:
-        print("\n✅ Latest News Scraper работи отлично!")
+        print("\n✅ Latest News Scraper works great!")
     else:
-        print("\n❌ Има проблеми с Latest News Scraper")
+        print("\n❌ There are issues with Latest News Scraper")
