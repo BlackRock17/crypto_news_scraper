@@ -1,7 +1,6 @@
-#!/usr/bin/env python3
 """
-Cleanup скрипт за изтриване на анализирани статии
-Използване: python cleanup_articles.py [опции]
+Cleanup script for deleting analyzed articles
+Usage: python cleanup_articles.py [options]
 """
 
 import argparse
@@ -11,19 +10,19 @@ from postgres_database import PostgreSQLDatabaseManager
 
 def cleanup_analyzed_articles(days_to_keep=7, dry_run=False):
     """
-    Изтрива анализирани статии по-стари от определен брой дни
+    Deletes analyzed articles older than a specified number of days
 
     Args:
-        days_to_keep (int): Колко дни да пази анализираните статии
-        dry_run (bool): Ако е True, само показва какво ще изтрие без да изтрива
+        days_to_keep (int): How many days to keep analyzed articles
+        dry_run (bool): If True, only shows what would be deleted without deleting
     """
-    print("🧹 CLEANUP НА АНАЛИЗИРАНИ СТАТИИ")
+    print("🧹 CLEANUP OF ANALYZED ARTICLES")
     print("=" * 50)
 
     db = PostgreSQLDatabaseManager()
 
-    # Показваме статистики преди cleanup
-    print("📊 Статистики преди cleanup:")
+    # Show statistics before cleanup
+    print("📊 Statistics before cleanup:")
     stats_before = db.get_database_stats()
     for key, value in stats_before.items():
         print(f"   {key}: {value}")
@@ -32,11 +31,11 @@ def cleanup_analyzed_articles(days_to_keep=7, dry_run=False):
         with db.get_connection() as conn:
             with conn.cursor() as cursor:
 
-                # Намираме статиите за изтриване
+                # Find articles to delete
                 cutoff_date = datetime.now() - timedelta(days=days_to_keep)
 
                 if dry_run:
-                    print(f"\n🔍 DRY RUN: Статии за изтриване (анализирани преди {days_to_keep} дни):")
+                    print(f"\n🔍 DRY RUN: Articles to delete (analyzed before {days_to_keep} days):")
                     cursor.execute('''
                         SELECT id, title, scraped_at
                         FROM articles 
@@ -50,12 +49,12 @@ def cleanup_analyzed_articles(days_to_keep=7, dry_run=False):
                     if articles_to_delete:
                         for i, (article_id, title, scraped_at) in enumerate(articles_to_delete, 1):
                             print(f"   {i}. [{article_id}] {title[:60]}... ({scraped_at})")
-                        print(f"\n📊 Общо {len(articles_to_delete)} статии ще бъдат изтрити")
+                        print(f"\n📊 Total {len(articles_to_delete)} articles would be deleted")
                     else:
-                        print("   Няма статии за изтриване")
+                        print("   No articles to delete")
 
                 else:
-                    print(f"\n🗑️ Изтриване на анализирани статии по-стари от {days_to_keep} дни...")
+                    print(f"\n🗑️ Deleting analyzed articles older than {days_to_keep} days...")
 
                     cursor.execute('''
                         DELETE FROM articles 
@@ -66,10 +65,10 @@ def cleanup_analyzed_articles(days_to_keep=7, dry_run=False):
                     deleted_count = cursor.rowcount
                     conn.commit()
 
-                    print(f"✅ Изтрити {deleted_count} анализирани статии")
+                    print(f"✅ Deleted {deleted_count} analyzed articles")
 
-                    # Показваме статистики след cleanup
-                    print("\n📊 Статистики след cleanup:")
+                    # Show statistics after cleanup
+                    print("\n📊 Statistics after cleanup:")
                     stats_after = db.get_database_stats()
                     for key, value in stats_after.items():
                         print(f"   {key}: {value}")
@@ -77,13 +76,13 @@ def cleanup_analyzed_articles(days_to_keep=7, dry_run=False):
                     return deleted_count
 
     except Exception as e:
-        print(f"❌ Грешка при cleanup: {e}")
+        print(f"❌ Error during cleanup: {e}")
         return 0
 
 
 def cleanup_all_analyzed_articles(dry_run=False):
-    """Изтрива ВСИЧКИ анализирани статии (независимо от датата)"""
-    print("🧹 CLEANUP НА ВСИЧКИ АНАЛИЗИРАНИ СТАТИИ")
+    """Deletes ALL analyzed articles (regardless of date)"""
+    print("🧹 CLEANUP OF ALL ANALYZED ARTICLES")
     print("=" * 50)
 
     db = PostgreSQLDatabaseManager()
@@ -93,7 +92,7 @@ def cleanup_all_analyzed_articles(dry_run=False):
             with conn.cursor() as cursor:
 
                 if dry_run:
-                    print("🔍 DRY RUN: Всички анализирани статии:")
+                    print("🔍 DRY RUN: All analyzed articles:")
                     cursor.execute('''
                         SELECT id, title, scraped_at
                         FROM articles 
@@ -106,26 +105,26 @@ def cleanup_all_analyzed_articles(dry_run=False):
                     if articles:
                         for i, (article_id, title, scraped_at) in enumerate(articles, 1):
                             print(f"   {i}. [{article_id}] {title[:60]}... ({scraped_at})")
-                        print(f"\n📊 Общо {len(articles)} статии ще бъдат изтрити")
+                        print(f"\n📊 Total {len(articles)} articles would be deleted")
                     else:
-                        print("   Няма анализирани статии за изтриване")
+                        print("   No analyzed articles to delete")
 
                 else:
                     cursor.execute('DELETE FROM articles WHERE is_analyzed = TRUE')
                     deleted_count = cursor.rowcount
                     conn.commit()
 
-                    print(f"✅ Изтрити {deleted_count} анализирани статии")
+                    print(f"✅ Deleted {deleted_count} analyzed articles")
                     return deleted_count
 
     except Exception as e:
-        print(f"❌ Грешка при cleanup: {e}")
+        print(f"❌ Error during cleanup: {e}")
         return 0
 
 
 def show_cleanup_status():
-    """Показва статус за cleanup - колко статии има за изтриване"""
-    print("📊 CLEANUP СТАТУС")
+    """Shows cleanup status - how many articles are available for deletion"""
+    print("📊 CLEANUP STATUS")
     print("=" * 30)
 
     db = PostgreSQLDatabaseManager()
@@ -134,14 +133,14 @@ def show_cleanup_status():
         with db.get_connection() as conn:
             with conn.cursor() as cursor:
 
-                # Общи статистики
+                # General statistics
                 stats = db.get_database_stats()
-                print("📈 Общи статистики:")
+                print("📈 General statistics:")
                 for key, value in stats.items():
                     print(f"   {key}: {value}")
 
-                # Статии по възраст
-                print("\n📅 Анализирани статии по възраст:")
+                # Articles by age
+                print("\n📅 Analyzed articles by age:")
                 for days in [1, 3, 7, 14, 30]:
                     cutoff_date = datetime.now() - timedelta(days=days)
                     cursor.execute('''
@@ -150,41 +149,41 @@ def show_cleanup_status():
                     ''', (cutoff_date,))
 
                     count = cursor.fetchone()[0]
-                    print(f"   По-стари от {days:2d} дни: {count} статии")
+                    print(f"   Older than {days:2d} days: {count} articles")
 
     except Exception as e:
-        print(f"❌ Грешка при статус: {e}")
+        print(f"❌ Error getting status: {e}")
 
 
 def main():
-    """Главна функция"""
+    """Main function"""
     parser = argparse.ArgumentParser(
-        description="Cleanup скрипт за анализирани статии",
+        description="Cleanup script for analyzed articles",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
-Примери:
+Examples:
 
-ОСНОВНИ КОМАНДИ:
-  python cleanup_articles.py status                    # Показва статус
-  python cleanup_articles.py cleanup --days 7          # Изтрива по-стари от 7 дни
-  python cleanup_articles.py cleanup --days 7 --dry-run # Само показва какво ще изтрие
-  python cleanup_articles.py cleanup --all             # Изтрива ВСИЧКИ анализирани
+BASIC COMMANDS:
+  python cleanup_articles.py status                    # Show status
+  python cleanup_articles.py cleanup --days 7          # Delete older than 7 days
+  python cleanup_articles.py cleanup --days 7 --dry-run # Only show what would be deleted
+  python cleanup_articles.py cleanup --all             # Delete ALL analyzed articles
         """
     )
 
-    subparsers = parser.add_subparsers(dest='command', help='Команди')
+    subparsers = parser.add_subparsers(dest='command', help='Commands')
 
-    # Status команда
-    status_parser = subparsers.add_parser('status', help='Показва cleanup статус')
+    # Status command
+    status_parser = subparsers.add_parser('status', help='Show cleanup status')
 
-    # Cleanup команда
-    cleanup_parser = subparsers.add_parser('cleanup', help='Изтрива анализирани статии')
+    # Cleanup command
+    cleanup_parser = subparsers.add_parser('cleanup', help='Delete analyzed articles')
     cleanup_parser.add_argument('--days', type=int, default=7,
-                                help='Дни за пазене на анализирани статии (default: 7)')
+                                help='Days to keep analyzed articles (default: 7)')
     cleanup_parser.add_argument('--all', action='store_true',
-                                help='Изтрива ВСИЧКИ анализирани статии')
+                                help='Delete ALL analyzed articles')
     cleanup_parser.add_argument('--dry-run', action='store_true',
-                                help='Само показва какво ще изтрие без да изтрива')
+                                help='Only show what would be deleted without deleting')
 
     args = parser.parse_args()
 
@@ -203,15 +202,15 @@ def main():
                 deleted = cleanup_analyzed_articles(days_to_keep=args.days, dry_run=args.dry_run)
 
             if not args.dry_run and deleted > 0:
-                print(f"\n🎉 Cleanup завършен! Изтрити {deleted} статии")
+                print(f"\n🎉 Cleanup completed! Deleted {deleted} articles")
 
         else:
-            print(f"❌ Неразпозната команда: {args.command}")
+            print(f"❌ Unrecognized command: {args.command}")
 
     except KeyboardInterrupt:
-        print("\n⏹️ Прекратено")
+        print("\n⏹️ Interrupted")
     except Exception as e:
-        print(f"\n❌ Грешка: {str(e)}")
+        print(f"\n❌ Error: {str(e)}")
 
 
 if __name__ == "__main__":
