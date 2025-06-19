@@ -6,24 +6,24 @@ from pathlib import Path
 
 class DatabaseManager:
     def __init__(self, db_path="crypto_news.db"):
-        """Инициализира database connection"""
+        """Initializes database connection"""
         self.db_path = db_path
-        print(f"🗄️ Инициализиране на база данни: {db_path}")
+        print(f"🗄️ Initializing database: {db_path}")
         self.init_database()
-        print("✅ База данни готова!")
+        print("✅ Database ready!")
 
     def init_database(self):
-        """Създава таблиците ако не съществуват"""
+        """Creates tables if they don't exist"""
         with sqlite3.connect(self.db_path, timeout=30.0) as conn:
             cursor = conn.cursor()
 
-            # Настройки за по-добра concurrency
+            # Settings for better concurrency
             cursor.execute("PRAGMA journal_mode=WAL")
             cursor.execute("PRAGMA synchronous=NORMAL")
             cursor.execute("PRAGMA cache_size=1000")
             cursor.execute("PRAGMA temp_store=memory")
 
-            # Главна таблица за статии
+            # Main table for articles
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS articles (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -40,7 +40,7 @@ class DatabaseManager:
                 )
             ''')
 
-            # Таблица за scraped URLs (history)
+            # Table for scraped URLs (history)
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS scraped_urls (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -51,7 +51,7 @@ class DatabaseManager:
                 )
             ''')
 
-            # Индекси за производителност
+            # Indexes for performance
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_articles_url ON articles(url)')
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_articles_processed ON articles(processed)')
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_scraped_urls_url ON scraped_urls(url)')
@@ -59,7 +59,7 @@ class DatabaseManager:
             conn.commit()
 
     def is_article_exists(self, url):
-        """Проверява дали статията вече съществува в базата"""
+        """Checks if article already exists in database"""
         try:
             with sqlite3.connect(self.db_path, timeout=10.0) as conn:
                 cursor = conn.cursor()
@@ -69,7 +69,7 @@ class DatabaseManager:
             return False
 
     def is_url_scraped_before(self, url):
-        """Проверява дали URL-а е бил скрапван преди"""
+        """Checks if URL has been scraped before"""
         try:
             with sqlite3.connect(self.db_path, timeout=10.0) as conn:
                 cursor = conn.cursor()
@@ -79,12 +79,12 @@ class DatabaseManager:
             return False
 
     def record_scraped_url(self, url):
-        """Записва или update-ва URL в историята - използва се отделно"""
+        """Records or updates URL in history - used separately"""
         try:
             with sqlite3.connect(self.db_path, timeout=30.0) as conn:
                 cursor = conn.cursor()
 
-                # Проверяваме дали съществува
+                # Check if it exists
                 cursor.execute("SELECT scrape_count FROM scraped_urls WHERE url = ?", (url,))
                 existing = cursor.fetchone()
 
@@ -105,24 +105,24 @@ class DatabaseManager:
                 conn.commit()
                 return True
         except Exception as e:
-            print(f"❌ Грешка при записване на URL: {str(e)}")
+            print(f"❌ Error recording URL: {str(e)}")
             return False
 
     def save_article(self, article_data):
-        """Запазва статия в базата данни"""
+        """Saves article to database"""
         try:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
 
-                # Проверяваме дали статията вече съществува
+                # Check if article already exists
                 cursor.execute("SELECT 1 FROM articles WHERE url = ?", (article_data['url'],))
                 if cursor.fetchone():
-                    print(f"⚠️ Статията вече съществува: {article_data['title'][:50]}...")
-                    # Записваме в URL историята
+                    print(f"⚠️ Article already exists: {article_data['title'][:50]}...")
+                    # Record in URL history
                     self.record_scraped_url(article_data['url'])
                     return False
 
-                # Записваме статията
+                # Save the article
                 cursor.execute('''
                     INSERT INTO articles 
                     (url, title, content, author, published_date, content_length)
@@ -136,14 +136,14 @@ class DatabaseManager:
                     article_data['content_length']
                 ))
 
-                # Записваме в URL историята в отделна транзакция
+                # Record in URL history in separate transaction
                 conn.commit()
 
-            # Записваме URL историята в отделна connection
+            # Record URL history in separate connection
             with sqlite3.connect(self.db_path) as conn2:
                 cursor2 = conn2.cursor()
 
-                # Проверяваме дали URL съществува
+                # Check if URL exists
                 cursor2.execute("SELECT scrape_count FROM scraped_urls WHERE url = ?", (article_data['url'],))
                 existing = cursor2.fetchone()
 
@@ -161,16 +161,16 @@ class DatabaseManager:
 
                 conn2.commit()
 
-            print(f"✅ Запазена статия: {article_data['title'][:50]}...")
+            print(f"✅ Saved article: {article_data['title'][:50]}...")
             return True
 
         except Exception as e:
-            print(f"❌ Грешка при запазване на статия: {str(e)}")
+            print(f"❌ Error saving article: {str(e)}")
             return False
 
     def save_multiple_articles(self, articles):
-        """Запазва множество статии"""
-        print(f"💾 Запазване на {len(articles)} статии в базата...")
+        """Saves multiple articles"""
+        print(f"💾 Saving {len(articles)} articles to database...")
 
         saved_count = 0
         duplicate_count = 0
@@ -181,13 +181,13 @@ class DatabaseManager:
             else:
                 duplicate_count += 1
 
-        print(f"📊 Резултат: {saved_count} нови статии, {duplicate_count} дублиращи се")
+        print(f"📊 Result: {saved_count} new articles, {duplicate_count} duplicates")
         return saved_count, duplicate_count
 
     def get_unprocessed_articles(self, limit=None):
-        """Връща непроцесирани статии за анализ"""
+        """Returns unprocessed articles for analysis"""
         with sqlite3.connect(self.db_path) as conn:
-            conn.row_factory = sqlite3.Row  # За dictionary-like резултати
+            conn.row_factory = sqlite3.Row  # For dictionary-like results
             cursor = conn.cursor()
 
             query = '''
@@ -204,7 +204,7 @@ class DatabaseManager:
             return [dict(row) for row in cursor.fetchall()]
 
     def mark_article_as_analyzed(self, article_id, sentiment_result=None):
-        """Маркира статия като анализирана"""
+        """Marks article as analyzed"""
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
 
@@ -219,10 +219,10 @@ class DatabaseManager:
             ''', (sentiment_json, article_id))
 
             conn.commit()
-            print(f"✅ Статия {article_id} маркирана като анализирана")
+            print(f"✅ Article {article_id} marked as analyzed")
 
     def cleanup_old_analyzed_articles(self, days_to_keep=7):
-        """Изтрива стари анализирани статии (scraped_urls остават!)"""
+        """Deletes old analyzed articles (scraped_urls remain!)"""
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
 
@@ -236,31 +236,31 @@ class DatabaseManager:
             deleted_count = cursor.rowcount
             conn.commit()
 
-            print(f"🧹 Изтрити {deleted_count} стари анализирани статии")
+            print(f"🧹 Deleted {deleted_count} old analyzed articles")
             return deleted_count
 
     def get_database_stats(self):
-        """Връща статистики за базата данни"""
+        """Returns database statistics"""
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
 
-            # Общ брой статии
+            # Total articles
             cursor.execute("SELECT COUNT(*) FROM articles")
             total_articles = cursor.fetchone()[0]
 
-            # Непроцесирани статии
+            # Unprocessed articles
             cursor.execute("SELECT COUNT(*) FROM articles WHERE processed = FALSE")
             unprocessed_articles = cursor.fetchone()[0]
 
-            # Анализирани статии
+            # Analyzed articles
             cursor.execute("SELECT COUNT(*) FROM articles WHERE processed = TRUE")
             analyzed_articles = cursor.fetchone()[0]
 
-            # Общо scraped URLs
+            # Total scraped URLs
             cursor.execute("SELECT COUNT(*) FROM scraped_urls")
             total_scraped_urls = cursor.fetchone()[0]
 
-            # Най-нова статия
+            # Newest article
             cursor.execute("SELECT title, scraped_at FROM articles ORDER BY scraped_at DESC LIMIT 1")
             latest_article = cursor.fetchone()
 
@@ -273,7 +273,7 @@ class DatabaseManager:
             }
 
     def export_articles_to_json(self, filename="articles_export.json", processed_only=False):
-        """Експортира статии в JSON файл"""
+        """Exports articles to JSON file"""
         with sqlite3.connect(self.db_path) as conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
@@ -286,23 +286,23 @@ class DatabaseManager:
             cursor.execute(query)
             articles = [dict(row) for row in cursor.fetchall()]
 
-            # Запазваме в JSON файл
+            # Save to JSON file
             with open(filename, 'w', encoding='utf-8') as f:
                 json.dump(articles, f, ensure_ascii=False, indent=2, default=str)
 
-            print(f"📤 Експортирани {len(articles)} статии в {filename}")
+            print(f"📤 Exported {len(articles)} articles to {filename}")
             return len(articles)
 
 
-# Тестова функция
+# Test function
 def test_database():
-    """Тества database функционалността"""
-    print("=== ТЕСТ НА DATABASE ===")
+    """Tests database functionality"""
+    print("=== DATABASE TEST ===")
 
-    # Инициализираме database
+    # Initialize database
     db = DatabaseManager("test_crypto_news.db")
 
-    # Тестови данни
+    # Test data
     test_article = {
         'url': 'https://example.com/test-article',
         'title': 'Test Bitcoin Article',
@@ -312,30 +312,30 @@ def test_database():
         'content_length': 75
     }
 
-    # Тестваме запазване
-    print("\n1. Тестване на запазване на статия...")
+    # Test saving
+    print("\n1. Testing article saving...")
     success = db.save_article(test_article)
-    print(f"Резултат: {'Успех' if success else 'Неуспех'}")
+    print(f"Result: {'Success' if success else 'Failure'}")
 
-    # Тестваме дублирано запазване
-    print("\n2. Тестване на дублирано запазване...")
+    # Test duplicate saving
+    print("\n2. Testing duplicate saving...")
     success = db.save_article(test_article)
-    print(f"Резултат: {'Неочаквано успешно' if success else 'Правилно блокирано дублиране'}")
+    print(f"Result: {'Unexpectedly successful' if success else 'Correctly blocked duplicate'}")
 
-    # Тестваме статистики
-    print("\n3. Статистики на базата данни:")
+    # Test statistics
+    print("\n3. Database statistics:")
     stats = db.get_database_stats()
     for key, value in stats.items():
         print(f"   {key}: {value}")
 
-    # Тестваме unprocessed статии
-    print("\n4. Непроцесирани статии:")
+    # Test unprocessed articles
+    print("\n4. Unprocessed articles:")
     unprocessed = db.get_unprocessed_articles()
-    print(f"   Намерени: {len(unprocessed)} статии")
+    print(f"   Found: {len(unprocessed)} articles")
 
-    # Почистваме test базата
+    # Clean up test database
     Path("test_crypto_news.db").unlink(missing_ok=True)
-    print("\n✅ Database тест завършен успешно!")
+    print("\n✅ Database test completed successfully!")
 
 
 if __name__ == "__main__":
